@@ -1,0 +1,203 @@
+You are an expert AI code generator tasked with building a complete React Native mobile application called "Contact Reminder App" for Android and iOS. The app helps introverted users maintain social connections by analyzing WhatsApp chat histories, using AI to suggest who to contact and what to discuss, and delivering reminders via notifications. The app uses a local SQLite database for operations, periodically syncs to Supabase for cloud backups, prompts users to enable WhatsApp backups on first launch, and accesses local WhatsApp backups on Android and iCloud exports on iOS. Below is a detailed specification. Generate all necessary code, including React Native UI, Deno backend, database setup, and AI integration, ensuring the app is secure, efficient, and user-friendly.
+
+---
+
+### 1. Project Overview
+- **Purpose**: Help introverted users stay connected by suggesting contacts to message and conversation starters based on WhatsApp chat context.
+- **Features**:
+  - Prompt users to enable WhatsApp backups (local for Android, iCloud for iOS) on first launch.
+  - Access WhatsApp backups: local `.txt` exports or `msgstore.db` on Android; iCloud Drive exports on iOS.
+  - Import phone contacts and store metadata (e.g., interests, relationship type).
+  - Parse WhatsApp chat exports to extract conversation data.
+  - Use Azure OpenAI’s GPT-4o-mini model to analyze chats, prioritize contacts (based on last interaction), and generate conversation starters.
+  - Store data locally in SQLite (encrypted).
+  - Sync data to Supabase daily at 2 AM.
+  - Deliver reminders via local push notifications with WhatsApp deep links.
+  - Minimalist UI to reduce overwhelm, with dark mode support.
+- **Platforms**: Android 10+, iOS 14+.
+- **Privacy**: Encrypt SQLite data, use Supabase Row-Level Security (RLS), obtain user consent for chat analysis, comply with GDPR.
+
+### 2. Tech Stack
+- **Frontend**: React Native v0.74+ with `@react-navigation/stack` for navigation.
+- **Local Database**: SQLite (`react-native-sqlite-storage`, encrypted).
+- **Cloud Database**: Supabase (PostgreSQL) with `@supabase/supabase-js`.
+- **Backend**: Deno v1.46+ for parsing chats, AI integration, and scheduling.
+- **AI**: Azure OpenAI (GPT-4o-mini) for chat analysis and suggestions.
+- **File Access**: `react-native-fs` for Android/iOS file system.
+- **Notifications**: `react-native-push-notification` for local reminders.
+- **Contacts**: `react-native-contacts` for importing phone contacts.
+- **Storage**: `@react-native-async-storage/async-storage` for app settings.
+- **Dependencies**:
+  - React Native: `react-native`, `react-native-sqlite-storage`, `react-native-fs`, `react-native-push-notification`, `react-native-contacts`, `@react-native-async-storage/async-storage`, `@react-navigation/native`, `@react-navigation/stack`, `react-native-safe-area-context`, `react-native-screens`.
+  - Deno: `deno`, `@supabase/supabase-js`, `openai`, `deno_cron`.
+
+### 3. Database Schema
+#### Local SQLite (contacts.db)
+- **Table: contacts**
+  ```sql
+  CREATE TABLE contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    interests TEXT, -- JSON string, e.g., ["hiking", "movies"]
+    last_contact_date TEXT, -- ISO 8601, e.g., "2025-05-10T12:00:00Z"
+    relationship_type TEXT -- e.g., "friend", "family"
+  );
+	•	Table: messages CREATE TABLE messages (
+	•	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	•	  contact_id INTEGER NOT NULL,
+	•	  timestamp TEXT NOT NULL, -- ISO 8601
+	•	  sender TEXT NOT NULL,
+	•	  content TEXT NOT NULL,
+	•	  FOREIGN KEY (contact_id) REFERENCES contacts(id)
+	•	);
+	•	
+	•	Table: suggestions CREATE TABLE suggestions (
+	•	  id INTEGER PRIMARY KEY AUTOINCREMENT,
+	•	  contact_id INTEGER NOT NULL,
+	•	  suggestion TEXT NOT NULL,
+	•	  created_at TEXT NOT NULL, -- ISO 8601
+	•	  FOREIGN KEY (contact_id) REFERENCES contacts(id)
+	•	);
+	•	
+	•	Encryption: Use encryptionKey for SQLite.
+Supabase (PostgreSQL)
+	•	Mirror SQLite schema (contacts, messages, suggestions).
+	•	Enable RLS: ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+	•	CREATE POLICY user_access ON contacts FOR ALL TO authenticated USING (auth.uid() = user_id);
+	•	-- Repeat for messages, suggestions
+	•	
+4. UI Components
+Create a minimalist, accessible UI with dark mode support (background: #F5F5F5 light, #222 dark; text: #333 light, #FFF dark).
+4.1 SetupScreen
+	•	Purpose: Prompt users to enable WhatsApp backups on first launch.
+	•	UI: Title, instructions (platform-specific), “Continue” button.
+	•	Logic: Check AsyncStorage for isFirstLaunch. Show alert with backup instructions. Navigate to HomeScreen.
+	•	File: src/components/SetupScreen.js
+4.2 HomeScreen
+	•	Purpose: Display contacts with latest AI suggestions and reminders.
+	•	UI: FlatList of contacts (name, suggestion, “Message” button), Settings button.
+	•	Logic: Fetch contacts and suggestions from SQLite. Show notifications for overdue contacts.
+	•	File: src/components/HomeScreen.js
+4.3 ContactDetailScreen
+	•	Purpose: Show conversation history, allow chat imports, display suggestions.
+	•	UI: Contact name, suggestion, “Import Chat” button, FlatList of messages.
+	•	Logic: Fetch messages/suggestions from SQLite. Import .txt files via react-native-fs.
+	•	File: src/components/ContactDetailScreen.js
+4.4 SettingsScreen
+	•	Purpose: Configure reminder frequency and trigger cloud sync.
+	•	UI: Input for reminder frequency (days), “Save Settings” button, “Trigger Cloud Sync” button.
+	•	Logic: Store settings in AsyncStorage. Call Deno sync endpoint.
+	•	File: src/components/SettingsScreen.js
+5. Backend Logic (Deno)
+	•	Purpose: Handle chat parsing, AI analysis, and Supabase sync.
+	•	Files:
+	◦	deno/parse_chat.ts: Parse WhatsApp .txt exports (format: [MM/DD/YY, HH:MM] Name: Message).
+	◦	deno/ai_analysis.ts: Call Azure OpenAI GPT-4o-mini for chat analysis.
+	◦	deno/sync_to_supabase.ts: Sync SQLite to Supabase daily.
+	◦	deno/scheduler.ts: Schedule daily AI analysis and sync.
+	•	Endpoints:
+	◦	POST /parse-chat: Parse chat file and return messages.
+	◦	POST /analyze-chat: Analyze messages and return JSON suggestion.
+	◦	POST /sync-to-supabase: Trigger Supabase sync.
+6. AI Integration (Azure OpenAI GPT-4o-mini)
+	•	Model: GPT-4o-mini (cost: ~$0.00015/1K input, $0.0006/1K output).
+	•	Prompt: You are an AI assistant helping an introverted user maintain social connections. Given a WhatsApp chat history with a contact, perform the following tasks:
+	•	
+	•	1. Identify the date of the last interaction (most recent message) in YYYY-MM-DD format.
+	•	2. Extract key topics, interests, or events discussed in the most recent 20 messages. Look for recurring themes (mentioned ≥2 times) such as hobbies, events, or emotions. Ignore generic greetings (e.g., "Hi", "How are you").
+	•	3. Suggest a conversation starter to reconnect with the contact, based on the context and relationship type (e.g., friend, family). The suggestion should:
+	•	   - Reference a specific topic or event from the chat history.
+	•	   - Be friendly, concise (≤20 words), and low-pressure, suitable for an introverted user.
+	•	   - Use a casual tone for friends (e.g., "Hey, how’s that hiking trip going?") and a warmer tone for family (e.g., "Hi Mom, how’s the garden coming along?").
+	•	   - Encourage a response without being demanding.
+	•	   - If the chat history has fewer than 5 messages or lacks clear topics, suggest a generic but appropriate reconnect message (e.g., "Hey [name], been a while! What’s new?" for friends; "Hi [name], just checking in—how’s everything?" for family).
+	•	
+	•	Chat History:
+	•	{chat_history}
+	•	
+	•	Contact Name: {contact_name}
+	•	Relationship Type: {relationship_type}
+	•	
+	•	Output in JSON format:
+	•	{
+	•	  "last_interaction_date": "YYYY-MM-DD",
+	•	  "topics": ["topic1", "topic2"],
+	•	  "suggestion": "Suggested message text"
+	•	}
+	•	
+	•	Integration: Call via Deno openai library. Store results in SQLite suggestions table.
+7. WhatsApp Backup Access
+	•	Android:
+	◦	Check /sdcard/WhatsApp/Databases/ for .txt exports or msgstore.db (warn if encrypted).
+	◦	Use react-native-fs to read files.
+	•	iOS:
+	◦	Prompt users to export chats to iCloud Drive or email.
+	◦	Use react-native-fs to access iCloud Drive files.
+	•	Logic: On ContactDetailScreen, allow manual .txt import. Check for backups on app start.
+8. Notifications
+	•	Library: react-native-push-notification.
+	•	Logic: Check contacts with last_contact_date > user-defined frequency (e.g., 14 days). Send notifications with suggestions and WhatsApp deep links (whatsapp://send?phone={phone}&text={suggestion}).
+9. Security
+	•	SQLite: Enable encryption with encryptionKey.
+	•	Supabase: Configure RLS with auth.uid() checks.
+	•	Consent: Show a consent screen before importing chats.
+	•	Minimal Data: Store only the last 50 messages per contact.
+10. File Structure
+ContactReminderApp/
+├── src/
+│   ├── components/
+│   │   ├── SetupScreen.js
+│   │   ├── HomeScreen.js
+│   │   ├── ContactDetailScreen.js
+│   │   └── SettingsScreen.js
+│   ├── db/
+│   │   ├── sqlite.js
+│   │   └── supabase.js
+│   ├── services/
+│   │   ├── backupAccess.js
+│   │   ├── notifications.js
+│   │   └── whatsapp.js
+├── deno/
+│   ├── parse_chat.ts
+│   ├── ai_analysis.ts
+│   ├── sync_to_supabase.ts
+│   ├── scheduler.ts
+├── tests/
+│   ├── parse_chat.test.ts
+│   ├── ai_analysis.test.ts
+└── package.json
+11. Implementation Steps
+	1	Setup Project: Initialize React Native project, install dependencies, configure navigation.
+	2	Database: Set up SQLite (encrypted) and Supabase tables with RLS.
+	3	UI: Implement SetupScreen, HomeScreen, ContactDetailScreen, SettingsScreen with minimalist design.
+	4	Backend: Create Deno scripts for chat parsing, AI analysis, and Supabase sync. Run a local server (port 8000).
+	5	WhatsApp Access: Implement backup access logic for Android/iOS using react-native-fs.
+	6	AI: Integrate GPT-4o-mini with the provided prompt. Cache suggestions in SQLite.
+	7	Notifications: Configure push notifications with WhatsApp deep links.
+	8	Sync: Schedule daily Supabase sync at 2 AM using deno_cron.
+	9	Security: Add SQLite encryption, Supabase RLS, and consent screen.
+12. Testing Plan
+	•	Unit Tests:
+	◦	Test chat parser with sample .txt files.
+	◦	Test AI prompt with 20-message and 3-message inputs.
+	◦	Test SQLite queries and Supabase sync.
+	•	Integration Tests:
+	◦	Verify backup access on Android/iOS emulators.
+	◦	Test notification delivery and WhatsApp links.
+	•	User Tests:
+	◦	Test with 5–10 contacts and sample chats.
+	◦	Validate suggestion relevance and tone.
+13. Deliverables
+	•	Complete React Native project with all UI components.
+	•	Deno backend with HTTP endpoints for parsing, AI, and sync.
+	•	SQLite and Supabase database setup scripts.
+	•	Test suite for parsing, AI, and sync.
+	•	README with setup instructions (e.g., environment variables: AZURE_OPENAI_KEY, SUPABASE_URL, SUPABASE_ANON_KEY).
+14. Notes
+	•	Use environment variables for sensitive data (e.g., .env file).
+	•	Handle errors (e.g., retry AI calls 3 times, 5s delay; alert for missing backups).
+	•	Optimize AI costs by batching contact analyses.
+	•	Ensure dark mode support with dynamic styles.
+
+Generate the complete codebase, including all files listed in the file structure, with fully functional React Native UI, Deno backend, SQLite/Supabase integration, and Azure OpenAI GPT-4o-mini calls. Provide a README with setup instructions and test cases. Ensure the code is secure, efficient, and follows React Native best practices.
