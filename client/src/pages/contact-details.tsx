@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import ImportChatModal from "@/components/contacts/import-chat-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
+import { ContactWithSuggestion } from "@shared/schema";
 
 export default function ContactDetails() {
   const { id } = useParams();
@@ -50,9 +51,10 @@ export default function ContactDetails() {
     if (!contact) return;
     
     // Construct WhatsApp URL
-    const message = encodeURIComponent(contact.suggestion || "");
+    const contactData = contact as ContactWithSuggestion;
+    const message = encodeURIComponent(contactData.suggestion || "");
     // Remove any non-numeric characters from phone
-    const phone = contact.phone.replace(/\D/g, "");
+    const phone = contactData.phone.replace(/\D/g, "");
     window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
   };
   
@@ -62,7 +64,9 @@ export default function ContactDetails() {
     
     const groups: Record<string, any[]> = {};
     
-    messages.forEach(message => {
+    const messageArray = Array.isArray(messages) ? messages : [];
+    
+    messageArray.forEach((message: any) => {
       const date = new Date(message.timestamp).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
@@ -133,12 +137,12 @@ export default function ContactDetails() {
               </div>
             ) : (
               <div className="flex items-center mb-4">
-                <div className={`h-12 w-12 rounded-full ${contact?.name.toLowerCase().includes("mom") ? "bg-secondary" : "bg-primary"} text-white flex items-center justify-center mr-3`}>
-                  <span>{getInitials(contact?.name || "")}</span>
+                <div className={`h-12 w-12 rounded-full ${(contact as ContactWithSuggestion)?.name?.toLowerCase().includes("mom") ? "bg-secondary" : "bg-primary"} text-white flex items-center justify-center mr-3`}>
+                  <span>{getInitials((contact as ContactWithSuggestion)?.name || "")}</span>
                 </div>
                 <div>
-                  <h2 className="font-medium text-lg">{contact?.name}</h2>
-                  <p className="text-sm text-muted-foreground">{contact?.phone}</p>
+                  <h2 className="font-medium text-lg">{(contact as ContactWithSuggestion)?.name}</h2>
+                  <p className="text-sm text-muted-foreground">{(contact as ContactWithSuggestion)?.phone}</p>
                 </div>
               </div>
             )}
@@ -147,9 +151,9 @@ export default function ContactDetails() {
               <h3 className="text-sm font-medium mb-2">Conversation Starter</h3>
               {contactLoading ? (
                 <Skeleton className="h-20 w-full rounded-lg" />
-              ) : contact?.suggestion ? (
+              ) : (contact as ContactWithSuggestion)?.suggestion ? (
                 <p className="bg-muted p-3 rounded-lg italic text-sm">
-                  {contact.suggestion}
+                  {(contact as ContactWithSuggestion).suggestion}
                 </p>
               ) : (
                 <p className="bg-muted p-3 rounded-lg text-sm">
@@ -201,7 +205,7 @@ export default function ContactDetails() {
               <Skeleton className="h-20 w-full" />
               <Skeleton className="h-20 w-full" />
             </div>
-          ) : messages?.length === 0 ? (
+          ) : (Array.isArray(messages) && messages.length === 0) ? (
             <div className="text-center py-8 bg-card rounded-lg border border-border">
               <p className="text-muted-foreground mb-4">No messages yet</p>
               <Button onClick={() => setShowImportModal(true)}>
@@ -224,7 +228,7 @@ export default function ContactDetails() {
                     <div key={index} className="flex mb-3">
                       <div 
                         className={`max-w-[80%] ${
-                          message.sender === "Me" || message.sender === contact?.name 
+                          message.sender === "Me" || message.sender === (contact as ContactWithSuggestion)?.name 
                             ? "bg-primary bg-opacity-10 ml-auto" 
                             : "bg-muted mr-auto"
                         } rounded-lg py-2 px-3`}
