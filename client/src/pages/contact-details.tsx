@@ -118,7 +118,7 @@ export default function ContactDetails() {
             <ArrowLeft size={20} />
           </Button>
           <h1 className="text-xl font-medium">
-            {contactLoading ? <Skeleton className="h-7 w-32" /> : contact?.name}
+            {contactLoading ? <Skeleton className="h-7 w-32" /> : (contact as ContactWithSuggestion)?.name}
           </h1>
         </div>
       </header>
@@ -265,8 +265,8 @@ export default function ContactDetails() {
                   <div className="mb-3">
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Interests</h3>
                     <div className="flex flex-wrap gap-2">
-                      {contact?.interests ? (
-                        JSON.parse(contact.interests).map((interest: string, idx: number) => (
+                      {(contact as ContactWithSuggestion)?.interests ? (
+                        JSON.parse((contact as ContactWithSuggestion)?.interests || '[]').map((interest: string, idx: number) => (
                           <Badge key={idx} variant="outline">{interest}</Badge>
                         ))
                       ) : (
@@ -277,13 +277,13 @@ export default function ContactDetails() {
                   
                   <div className="mb-3">
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Relationship</h3>
-                    <p className="text-sm capitalize">{contact?.relationship_type || "Friend"}</p>
+                    <p className="text-sm capitalize">{(contact as ContactWithSuggestion)?.relationship_type || "Friend"}</p>
                   </div>
                   
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Reminder Frequency</h3>
                     <div className="flex items-center">
-                      <p className="text-sm mr-2">Every {contact?.reminder_frequency || 14} days</p>
+                      <p className="text-sm mr-2">Every {(contact as ContactWithSuggestion)?.reminder_frequency || 14} days</p>
                       <Button variant="link" className="text-primary text-sm p-0 h-auto">
                         Edit
                       </Button>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Settings as SettingsType } from "@shared/schema";
 import MainLayout from "@/components/layout/main-layout";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -70,10 +71,11 @@ export default function Settings() {
   
   // Initialize state from settings
   useEffect(() => {
-    if (settings) {
-      setRemindersEnabled(settings.reminder_enabled);
-      setReminderFrequency(String(settings.reminder_frequency));
-      setCloudBackupEnabled(settings.cloud_backup_enabled);
+    if (settings && typeof settings === 'object') {
+      const settingsObj = settings as any;
+      setRemindersEnabled(settingsObj.reminder_enabled);
+      setReminderFrequency(String(settingsObj.reminder_frequency));
+      setCloudBackupEnabled(settingsObj.cloud_backup_enabled);
     }
   }, [settings]);
   
