@@ -1,5 +1,5 @@
 import { ContactWithSuggestion } from "@shared/schema";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { MoreVertical, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +22,7 @@ export default function ContactCard({
   onDismiss,
   onMessageClick,
 }: ContactCardProps) {
-  const [_, navigate] = useNavigate();
+  const [_, setLocation] = useLocation();
 
   const getInitials = (name: string) => {
     return name
@@ -53,7 +53,7 @@ export default function ContactCard({
   };
 
   const navigateToContact = () => {
-    navigate(`/contact/${contact.id}`);
+    setLocation(`/contact/${contact.id}`);
   };
 
   return (

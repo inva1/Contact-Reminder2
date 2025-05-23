@@ -1,6 +1,6 @@
 import { useState } from "react";
 import MainLayout from "@/components/layout/main-layout";
-import { useParams, useNavigate } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { 
   useContact, 
   useContactMessages, 
@@ -17,7 +17,7 @@ import { useLocalStorage } from "@/hooks/use-local-storage";
 
 export default function ContactDetails() {
   const { id } = useParams();
-  const [_, navigate] = useNavigate();
+  const [_, setLocation] = useLocation();
   const [showImportModal, setShowImportModal] = useState(false);
   const { toast } = useToast();
   const [setupComplete] = useLocalStorage("setupComplete", false);
@@ -27,7 +27,7 @@ export default function ContactDetails() {
   const generateSuggestion = useGenerateSuggestion();
   
   const navigateBack = () => {
-    navigate("/");
+    setLocation("/");
   };
   
   const handleRefreshSuggestion = async () => {

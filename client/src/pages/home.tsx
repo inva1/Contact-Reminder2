@@ -7,12 +7,12 @@ import ContactCard from "@/components/contacts/contact-card";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { Plus, Moon, Sun, Settings } from "lucide-react";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import AddContactModal from "@/components/contacts/add-contact-modal";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
-  const [_, navigate] = useNavigate();
+  const [_, setLocation] = useLocation();
   const { theme, setTheme } = useTheme();
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [setupComplete, setSetupComplete] = useLocalStorage("setupComplete", false);
@@ -23,16 +23,16 @@ export default function Home() {
   
   useEffect(() => {
     if (!setupComplete) {
-      navigate("/setup");
+      setLocation("/setup");
     }
-  }, [setupComplete, navigate]);
+  }, [setupComplete, setLocation]);
   
   const toggleDarkMode = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
   
   const navigateToSettings = () => {
-    navigate("/settings");
+    setLocation("/settings");
   };
   
   const dismissReminder = async (contactId: number) => {

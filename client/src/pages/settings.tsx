@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import MainLayout from "@/components/layout/main-layout";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
