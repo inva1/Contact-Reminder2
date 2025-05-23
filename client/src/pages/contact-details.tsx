@@ -97,7 +97,7 @@ export default function ContactDetails() {
   
   // Check if user completed setup
   if (!setupComplete) {
-    navigate("/setup");
+    setLocation("/setup");
     return null;
   }
 

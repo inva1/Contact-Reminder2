@@ -1,15 +1,15 @@
 import { Button } from "@/components/ui/button";
 import { useLocalStorage } from "@/hooks/use-local-storage";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 
 export default function Setup() {
-  const [_, navigate] = useNavigate();
+  const [_, setLocation] = useLocation();
   const [__, setSetupComplete] = useLocalStorage("setupComplete", false);
   
   const handleContinue = () => {
     setSetupComplete(true);
-    navigate("/");
+    setLocation("/");
   };
 
   return (

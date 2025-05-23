@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 
 export default function Settings() {
-  const [_, navigate] = useNavigate();
+  const [_, setLocation] = useLocation();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [setupComplete] = useLocalStorage("setupComplete", false);
@@ -78,7 +78,7 @@ export default function Settings() {
   }, [settings]);
   
   const navigateBack = () => {
-    navigate("/");
+    setLocation("/");
   };
   
   const handleReminderToggle = (checked: boolean) => {
@@ -131,7 +131,7 @@ export default function Settings() {
   
   // Check if user completed setup
   if (!setupComplete) {
-    navigate("/setup");
+    setLocation("/setup");
     return null;
   }
 

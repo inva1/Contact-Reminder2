@@ -11,14 +11,14 @@ export default function NavigationBar() {
   return (
     <nav className="bg-card border-t border-border fixed bottom-0 w-full py-2 px-6 shadow-sm">
       <div className="flex justify-around items-center">
-        <Link href="/">
-          <a className={`flex flex-col items-center p-2 ${
+        <div onClick={() => window.location.href = "/"} className="cursor-pointer">
+          <div className={`flex flex-col items-center p-2 ${
             isActive("/") ? "text-primary" : "text-muted-foreground"
           }`}>
             <Home size={24} />
             <span className="text-xs mt-1">Home</span>
-          </a>
-        </Link>
+          </div>
+        </div>
         
         <Link href="/contacts">
           <a className={`flex flex-col items-center p-2 ${
