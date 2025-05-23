@@ -72,10 +72,10 @@ export default function Settings() {
   // Initialize state from settings
   useEffect(() => {
     if (settings && typeof settings === 'object') {
-      const settingsObj = settings as any;
-      setRemindersEnabled(settingsObj.reminder_enabled);
-      setReminderFrequency(String(settingsObj.reminder_frequency));
-      setCloudBackupEnabled(settingsObj.cloud_backup_enabled);
+      const settingsObj = settings as SettingsType;
+      setRemindersEnabled(settingsObj.reminder_enabled ?? false);
+      setReminderFrequency(String(settingsObj.reminder_frequency ?? 14));
+      setCloudBackupEnabled(settingsObj.cloud_backup_enabled ?? false);
     }
   }, [settings]);
   
