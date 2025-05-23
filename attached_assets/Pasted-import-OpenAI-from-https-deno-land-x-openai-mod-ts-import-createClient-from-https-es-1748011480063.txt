@@ -1,0 +1,87 @@
+import { OpenAI } from "https://deno.land/x/openai/mod.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js";
+
+const openai = new OpenAI({
+  apiKey: Deno.env.get("AZURE_OPENAI_KEY"),
+  endpoint: Deno.env.get("AZURE_ENDPOINT"),
+});
+
+const supabase = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_ANON_KEY"));
+
+interface Message {
+  contact_id: number;
+  timestamp: string;
+  sender: string;
+  content: string;
+}
+
+async function analyzeChat(messages: Message[], contactName: string, relationshipType: string) {
+  const chatHistory = messages
+    .slice(-20)
+    .map((m) => `[${m.timestamp}] ${m.sender}: ${m.content}`)
+    .join("\n");
+
+  const prompt = `...[insert tuned prompt above]...`; // Replace with full prompt
+
+  try {
+    const response = await openai.createCompletion({
+      model: "gpt-4o-mini",
+      prompt,
+      maxTokens: 200,
+      temperature: 0.7,
+      topP: 1.0,
+      responseFormat: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].text);
+
+    // Store suggestion in Supabase
+    await supabase.from("suggestions").insert({
+      contact_id: messages[0].contact_id,
+      suggestion: result.suggestion,
+      created_at: new Date().toISOString(),
+    });
+
+    return result;
+  } catch (error) {
+    console.error("AI analysis error:", error);
+    // Retry logic: 3 attempts, 5s delay
+    for (let i = 0; i < 2; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      try {
+        const response = await openai.createCompletion({ /* same params */ });
+        const result = JSON.parse(response.choices[0].text);
+        await supabase.from("suggestions").insert({
+          contact_id: messages[0].contact_id,
+          suggestion: result.suggestion,
+          created_at: new Date().toISOString(),
+        });
+        return result;
+      } catch (retryError) {
+        console.error(`Retry ${i + 1} failed:`, retryError);
+      }
+    }
+    // Fallback generic suggestion
+    const fallback = {
+      last_interaction_date: messages[messages.length - 1]?.timestamp.split("T")[0] || new Date().toISOString().split("T")[0],
+      topics: [],
+      suggestion: relationshipType === "friend"
+        ? `Hey ${contactName}, been a while! What’s new?`
+        : `Hi ${contactName}, just checking in—how’s everything?`,
+    };
+    await supabase.from("suggestions").insert({
+      contact_id: messages[0].contact_id,
+      suggestion: fallback.suggestion,
+      created_at: new Date().toISOString(),
+    });
+    return fallback;
+  }
+}
+
+// Example usage
+const messages = [
+  { contact_id: 1, timestamp: "2025-05-10T12:00:00Z", sender: "Sarah", content: "Just got back from hiking!" },
+  { contact_id: 1, timestamp: "2025-05-10T12:05:00Z", sender: "User", content: "Nice! Which trail?" },
+];
+const result = await analyzeChat(messages, "Sarah", "friend");
+console.log(result);

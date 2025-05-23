@@ -1,10 +1,15 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-key-for-development"
+// Azure OpenAI configuration
+const openai = new OpenAI({
+  apiKey: process.env.AZURE_OPENAI_KEY || "3OprBLX9YmiUWsUoRtkT9bcFqs9LdtthSfhl9nIWU4s9JYDyoT6VJQQJ99BEACHYHv6XJ3w3AAAAACOGzS4B",
+  baseURL: "https://emma-mawyj0x1-eastus2.cognitiveservices.azure.com/openai/deployments/model-router/chat/completions?api-version=2025-01-01-preview",
 });
+
+// Fallback to regular OpenAI if Azure credentials aren't available
+// const openai = new OpenAI({ 
+//   apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-key-for-development"
+// });
 
 interface Message {
   sender: string;
@@ -29,7 +34,7 @@ export async function analyzeChat(
     ).join('\n');
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "o4-mini", // Using Azure OpenAI o4-mini model
       messages: [
         {
           role: "system",
@@ -53,7 +58,7 @@ export async function analyzeChat(
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content) as ChatAnalysis;
+    const result = JSON.parse(response.choices[0].message.content || '{}') as ChatAnalysis;
     return result;
   } catch (error) {
     console.error("OpenAI API error:", error);
@@ -76,7 +81,7 @@ export async function generateSuggestion(
       : '';
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "o4-mini", // Using Azure OpenAI o4-mini model
       messages: [
         {
           role: "system",
@@ -91,7 +96,8 @@ export async function generateSuggestion(
       ]
     });
 
-    return response.choices[0].message.content.replace(/^["']|["']$/g, '');
+    const messageContent = response.choices[0]?.message?.content;
+    return messageContent ? messageContent.replace(/^["']|["']$/g, '') : `Hey ${contactName}, just wanted to check in and see how you're doing!`;
   } catch (error) {
     console.error("OpenAI API error:", error);
     return `Hey ${contactName}, just wanted to check in and see how you're doing!`;
