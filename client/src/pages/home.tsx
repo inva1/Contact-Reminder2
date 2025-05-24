@@ -58,10 +58,34 @@ export default function Home() {
     }
   };
   
-  // Filter contacts into priority (needs attention) and regular contacts
+  // Filter and sort contacts by priority, relationship strength, and last contact date
   const contacts = contactsQuery.data as ContactWithSuggestion[] || [];
-  const priorityContacts = contacts.filter(c => c.daysSinceLastContact && c.daysSinceLastContact >= 14);
-  const recentContacts = contacts.filter(c => !c.daysSinceLastContact || c.daysSinceLastContact < 14);
+  
+  // Priority categories
+  const urgentContacts = contacts.filter(c => 
+    (c.daysSinceLastContact && c.daysSinceLastContact >= 30) || // Over a month
+    (c.reminderStatus === 'overdue') || 
+    (c.priority_level && c.priority_level >= 4)  // High priority contacts
+  );
+  
+  const needsAttentionContacts = contacts.filter(c => 
+    !urgentContacts.includes(c) && // Not already in urgent
+    ((c.daysSinceLastContact && c.daysSinceLastContact >= 14) || // 2+ weeks 
+    (c.reminderStatus === 'due'))
+  );
+  
+  const favoriteContacts = contacts.filter(c => 
+    !urgentContacts.includes(c) && 
+    !needsAttentionContacts.includes(c) && 
+    c.is_favorite
+  );
+  
+  // Regular contacts (not in any of the above categories)
+  const otherContacts = contacts.filter(c => 
+    !urgentContacts.includes(c) && 
+    !needsAttentionContacts.includes(c) && 
+    !favoriteContacts.includes(c)
+  );
 
   return (
     <MainLayout>
@@ -98,44 +122,89 @@ export default function Home() {
           </div>
         ) : (
           <>
-            {/* Priority Contacts Section */}
-            {priorityContacts.length > 0 && (
+            {/* Urgent Contacts Section */}
+            {urgentContacts.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-lg font-medium mb-3">
-                  Needs Attention <span className="text-sm font-normal text-muted-foreground">(14+ days)</span>
+                <h2 className="text-lg font-medium mb-3 flex items-center">
+                  <span className="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span>
+                  Urgent <span className="text-sm font-normal text-muted-foreground ml-2">(30+ days)</span>
                 </h2>
                 <div className="space-y-3">
-                  {priorityContacts.map(contact => (
+                  {urgentContacts.map((contact: ContactWithSuggestion) => (
                     <ContactCard
                       key={contact.id}
                       contact={contact}
                       isPriority={true}
                       onDismiss={dismissReminder}
+                      onMessageClick={() => setLocation(`/contacts/${contact.id}`)}
                     />
                   ))}
                 </div>
               </div>
             )}
             
-            {/* Recent Contacts Section */}
-            <div>
-              <h2 className="text-lg font-medium mb-3">Recent Contacts</h2>
-              {recentContacts.length > 0 ? (
+            {/* Needs Attention Section */}
+            {needsAttentionContacts.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-lg font-medium mb-3 flex items-center">
+                  <span className="inline-block w-3 h-3 rounded-full bg-amber-500 mr-2"></span>
+                  Needs Attention <span className="text-sm font-normal text-muted-foreground ml-2">(14+ days)</span>
+                </h2>
                 <div className="space-y-3">
-                  {recentContacts.map(contact => (
+                  {needsAttentionContacts.map((contact: ContactWithSuggestion) => (
                     <ContactCard
                       key={contact.id}
                       contact={contact}
+                      isPriority={true}
+                      onDismiss={dismissReminder}
+                      onMessageClick={() => setLocation(`/contacts/${contact.id}`)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Favorites Section */}
+            {favoriteContacts.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-lg font-medium mb-3 flex items-center">
+                  <span className="inline-block w-3 h-3 rounded-full bg-yellow-400 mr-2"></span>
+                  Favorites
+                </h2>
+                <div className="space-y-3">
+                  {favoriteContacts.map((contact: ContactWithSuggestion) => (
+                    <ContactCard
+                      key={contact.id}
+                      contact={contact}
+                      onMessageClick={() => setLocation(`/contacts/${contact.id}`)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Other Contacts Section */}
+            <div>
+              <h2 className="text-lg font-medium mb-3">All Contacts</h2>
+              {otherContacts.length > 0 ? (
+                <div className="space-y-3">
+                  {otherContacts.map((contact: ContactWithSuggestion) => (
+                    <ContactCard
+                      key={contact.id}
+                      contact={contact}
+                      onMessageClick={() => setLocation(`/contacts/${contact.id}`)}
                     />
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 bg-card rounded-lg border border-border">
-                  <p className="text-muted-foreground mb-4">No contacts added yet</p>
-                  <Button onClick={() => setShowAddContactModal(true)}>
-                    Add Your First Contact
-                  </Button>
-                </div>
+                contacts.length === 0 && (
+                  <div className="text-center py-8 bg-card rounded-lg border border-border">
+                    <p className="text-muted-foreground mb-4">No contacts added yet</p>
+                    <Button onClick={() => setShowAddContactModal(true)}>
+                      Add Your First Contact
+                    </Button>
+                  </div>
+                )
               )}
             </div>
           </>

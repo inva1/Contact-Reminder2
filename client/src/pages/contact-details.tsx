@@ -21,7 +21,10 @@ import {
   StarOff, 
   Phone, 
   Calendar, 
-  Clock
+  Clock,
+  BarChart,
+  FileText,
+  PieChart
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +51,26 @@ export default function ContactDetails() {
   
   const generateSuggestion = useGenerateSuggestion();
   const updateSuggestion = useUpdateSuggestion();
+  
+  // Function to handle updating a suggestion
+  const handleUpdateSuggestion = async (newSuggestion: string) => {
+    try {
+      await updateSuggestion.mutateAsync({
+        id: id || "",
+        suggestion: newSuggestion
+      });
+      toast({
+        title: "Suggestion updated",
+        description: "Your conversation starter has been updated"
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to update suggestion",
+        variant: "destructive"
+      });
+    }
+  };
   
   const navigateBack = () => {
     setLocation("/");
@@ -248,67 +271,108 @@ export default function ContactDetails() {
           </CardContent>
         </Card>
         
-        {/* Conversation History */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-medium">Conversation History</h2>
-            <Button 
-              variant="ghost" 
-              className="flex items-center text-primary text-sm font-medium" 
-              onClick={() => setShowImportModal(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Import Chat
-            </Button>
-          </div>
+        {/* Tabs for different sections */}
+        <Tabs defaultValue="messages" value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid grid-cols-3 mb-4">
+            <TabsTrigger value="messages" className="text-sm">
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Messages
+            </TabsTrigger>
+            <TabsTrigger value="analysis" className="text-sm">
+              <BarChart className="h-4 w-4 mr-1" />
+              Analysis
+            </TabsTrigger>
+            <TabsTrigger value="suggestions" className="text-sm">
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Alternatives
+            </TabsTrigger>
+          </TabsList>
           
-          {/* Message Timeline */}
-          {messagesLoading ? (
-            <div className="space-y-4">
-              <Skeleton className="h-6 w-24 mx-auto" />
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
-            </div>
-          ) : (Array.isArray(messages) && messages.length === 0) ? (
-            <div className="text-center py-8 bg-card rounded-lg border border-border">
-              <p className="text-muted-foreground mb-4">No messages yet</p>
-              <Button onClick={() => setShowImportModal(true)}>
-                Import WhatsApp Chat
+          {/* Messages Tab */}
+          <TabsContent value="messages" className="space-y-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-medium">Conversation History</h2>
+              <Button 
+                variant="ghost" 
+                className="flex items-center text-primary text-sm font-medium" 
+                onClick={() => setShowImportModal(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Import Chat
               </Button>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(groupedMessages()).map(([date, dateMessages]) => (
-                <div key={date}>
-                  {/* Date Divider */}
-                  <div className="flex items-center justify-center">
-                    <div className="bg-muted px-4 py-1 rounded-full text-xs text-muted-foreground">
-                      {date}
-                    </div>
-                  </div>
-                  
-                  {/* Messages */}
-                  {dateMessages.map((message, index) => (
-                    <div key={index} className="flex mb-3">
-                      <div 
-                        className={`max-w-[80%] ${
-                          message.sender === "Me" || message.sender === (contact as ContactWithSuggestion)?.name 
-                            ? "bg-primary bg-opacity-10 ml-auto" 
-                            : "bg-muted mr-auto"
-                        } rounded-lg py-2 px-3`}
-                      >
-                        <p className="text-sm">{message.content}</p>
-                        <span className="text-xs text-muted-foreground mt-1 block">
-                          {formatTime(message.timestamp)}
-                        </span>
+            
+            {messagesLoading ? (
+              <div className="space-y-4">
+                <Skeleton className="h-6 w-24 mx-auto" />
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+              </div>
+            ) : (Array.isArray(messages) && messages.length === 0) ? (
+              <div className="text-center py-8 bg-card rounded-lg border border-border">
+                <p className="text-muted-foreground mb-4">No messages yet</p>
+                <Button onClick={() => setShowImportModal(true)}>
+                  Import WhatsApp Chat
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {Object.entries(groupedMessages()).map(([date, dateMessages]) => (
+                  <div key={date}>
+                    {/* Date Divider */}
+                    <div className="flex items-center justify-center">
+                      <div className="bg-muted px-4 py-1 rounded-full text-xs text-muted-foreground">
+                        {date}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                    
+                    {/* Messages */}
+                    {dateMessages.map((message, index) => (
+                      <div key={index} className="flex mb-3">
+                        <div 
+                          className={`max-w-[80%] ${
+                            message.sender === "Me" || message.sender === (contact as ContactWithSuggestion)?.name 
+                              ? "bg-primary bg-opacity-10 ml-auto" 
+                              : "bg-muted mr-auto"
+                          } rounded-lg py-2 px-3`}
+                        >
+                          <p className="text-sm">{message.content}</p>
+                          <span className="text-xs text-muted-foreground mt-1 block">
+                            {formatTime(message.timestamp)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+          
+          {/* Analysis Tab */}
+          <TabsContent value="analysis">
+            <ContactAnalysis
+              isLoading={analysisLoading || contactLoading}
+              topics={analysis?.topics}
+              sentiment={analysis?.sentiment}
+              relationshipStrength={analysis?.relationship_strength}
+              interactionFrequency={analysis?.interaction_frequency}
+              conversationThemes={analysis?.conversation_themes}
+              lastInteractionDate={analysis?.last_interaction_date}
+              messagePreview={analysis?.message_preview}
+            />
+          </TabsContent>
+          
+          {/* Suggestions Tab */}
+          <TabsContent value="suggestions">
+            <SuggestionAlternatives
+              isLoading={alternativesLoading}
+              alternatives={alternatives?.alternative_options || []}
+              onSelect={handleUpdateSuggestion}
+              onRefresh={() => handleRefreshSuggestion()}
+            />
+          </TabsContent>
+        </Tabs>
         
         {/* Contact Details */}
         <div>
