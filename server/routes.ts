@@ -165,8 +165,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Store messages
       const messages = await storage.createMessages(parsedMessages);
       
-      // Generate a conversation suggestion using OpenAI
-      const lastMessages = messages.slice(-20);
+      // Generate a comprehensive conversation analysis using OpenAI
+      const lastMessages = messages.slice(-40); // Analyze more messages for better context
       const analysis = await analyzeChat(
         lastMessages.map(m => ({ 
           sender: m.sender, 
@@ -177,26 +177,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contact.relationship_type || "friend"
       );
       
-      // Save the suggestion
+      // Store topics as JSON string if available
+      const topicsJson = analysis.topics && analysis.topics.length > 0 
+        ? JSON.stringify(analysis.topics) 
+        : null;
+        
+      // Store conversation themes as JSON string if available
+      const themesJson = analysis.conversation_themes && analysis.conversation_themes.length > 0
+        ? JSON.stringify(analysis.conversation_themes)
+        : null;
+      
+      // Save the suggestion with enhanced data
       if (analysis.suggestion) {
         await storage.createSuggestion({
           contact_id: contactId,
           suggestion: analysis.suggestion,
+          topics: topicsJson,
+          context: analysis.context_notes,
           created_at: new Date()
         });
         
-        // Update last contact date if it was provided in the analysis
-        if (analysis.last_interaction_date) {
-          await storage.updateContact(contactId, {
-            last_contact_date: new Date(analysis.last_interaction_date)
-          });
+        // Update contact with more detailed information from analysis
+        const lastDate = new Date(analysis.last_interaction_date);
+        const updateData: any = { 
+          last_contact_date: lastDate,
+          last_message_date: lastDate
+        };
+        
+        // Update priority based on relationship strength if available
+        if (analysis.relationship_strength) {
+          updateData.priority_level = Math.ceil(analysis.relationship_strength / 2); // Convert 1-10 to 1-5 scale
         }
+        
+        // Update interests from topics if available
+        if (contact.interests === null && topicsJson) {
+          updateData.interests = topicsJson;
+        }
+        
+        await storage.updateContact(contactId, updateData);
       }
       
       res.json({ 
         success: true,
         messagesImported: messages.length,
-        suggestion: analysis.suggestion
+        suggestion: analysis.suggestion,
+        analysis: {
+          topics: analysis.topics || [],
+          sentiment: analysis.sentiment || 'neutral',
+          relationship_strength: analysis.relationship_strength || 5,
+          interaction_frequency: analysis.interaction_frequency || 'occasional',
+          conversation_themes: analysis.conversation_themes || [],
+          last_interaction_date: analysis.last_interaction_date,
+          message_preview: analysis.message_preview || ''
+        }
       });
     } catch (error) {
       console.error("Import error:", error);
@@ -262,7 +295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (messages.length === 0) {
         // If no messages, generate a generic suggestion
-        const genericSuggestion = await generateSuggestion(
+        const suggestionResponse = await generateSuggestion(
           contact.name || "Contact",
           contact.relationship_type || "friend",
           contact.interests ? JSON.parse(contact.interests) : []
@@ -270,17 +303,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const suggestion = await storage.createSuggestion({
           contact_id: contactId,
-          suggestion: genericSuggestion,
+          suggestion: suggestionResponse.message,
+          context: suggestionResponse.context_relevance,
+          topics: suggestionResponse.alternative_options ? JSON.stringify(suggestionResponse.alternative_options) : null,
           created_at: new Date()
         });
         
-        return res.json(suggestion);
+        return res.json({
+          ...suggestion,
+          tone_analysis: suggestionResponse.tone_analysis,
+          alternative_options: suggestionResponse.alternative_options
+        });
       }
       
-      // Use last 20 messages for analysis
-      const lastMessages = messages.slice(-20);
+      // Use last 40 messages for better analysis
+      const lastMessages = messages.slice(-40);
       
-      // Analyze chat
+      // Analyze chat with comprehensive analysis
       const analysis = await analyzeChat(
         lastMessages.map(m => ({ 
           sender: m.sender, 
@@ -291,15 +330,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contact.relationship_type || "friend"
       );
       
-      // Save the suggestion
+      // Store topics as JSON string if available
+      const topicsJson = analysis.topics && analysis.topics.length > 0 
+        ? JSON.stringify(analysis.topics) 
+        : null;
+        
+      // Store conversation themes as JSON string if available
+      const themesJson = analysis.conversation_themes && analysis.conversation_themes.length > 0
+        ? JSON.stringify(analysis.conversation_themes)
+        : null;
+      
+      // Save the suggestion with enhanced data
       if (analysis.suggestion) {
         const newSuggestion = await storage.createSuggestion({
           contact_id: contactId,
           suggestion: analysis.suggestion,
+          topics: topicsJson,
+          context: analysis.context_notes,
           created_at: new Date()
         });
         
-        res.json(newSuggestion);
+        // Update contact with more detailed information if available
+        if (analysis.last_interaction_date) {
+          const lastDate = new Date(analysis.last_interaction_date);
+          const updateData: any = { 
+            last_contact_date: lastDate,
+            last_message_date: lastDate
+          };
+          
+          // Update priority based on relationship strength if available
+          if (analysis.relationship_strength) {
+            updateData.priority_level = Math.ceil(analysis.relationship_strength / 2); // Convert 1-10 to 1-5 scale
+          }
+          
+          await storage.updateContact(contactId, updateData);
+        }
+        
+        res.json({
+          ...newSuggestion,
+          analysis: {
+            topics: analysis.topics || [],
+            sentiment: analysis.sentiment || 'neutral',
+            relationship_strength: analysis.relationship_strength || 5,
+            interaction_frequency: analysis.interaction_frequency || 'occasional',
+            conversation_themes: analysis.conversation_themes || [],
+            message_preview: analysis.message_preview || ''
+          }
+        });
       } else {
         res.status(500).json({ message: "Failed to generate suggestion" });
       }

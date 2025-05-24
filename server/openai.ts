@@ -94,36 +94,89 @@ export async function analyzeChat(
   }
 }
 
+interface SuggestionResponse {
+  message: string;
+  tone_analysis: string;
+  context_relevance: string;
+  alternative_options: string[];
+}
+
 export async function generateSuggestion(
   contactName: string, 
   relationshipType: string,
-  interests: string[] = []
-): Promise<string> {
+  interests: string[] = [],
+  lastContactDate?: string,
+  previousMessages: Message[] = [],
+  occasionContext?: string
+): Promise<SuggestionResponse> {
   try {
+    // Prepare context for better suggestion generation
     const interestsText = interests.length > 0 
       ? `They are interested in: ${interests.join(', ')}.` 
       : '';
+    
+    const timeContext = lastContactDate 
+      ? `Last contact was on ${lastContactDate}.` 
+      : 'It has been a while since we last spoke.';
+    
+    const messageHistory = previousMessages.length > 0
+      ? `Recent conversation snippets:\n${previousMessages.slice(-5).map(m => `${m.sender}: ${m.content}`).join('\n')}`
+      : '';
+    
+    const specialOccasion = occasionContext 
+      ? `Context for this message: ${occasionContext}.` 
+      : '';
 
     const response = await openai.chat.completions.create({
-      model: "o4-mini", // Using Azure OpenAI o4-mini model
+      model: "gpt-4o", // Using the latest OpenAI model
       messages: [
         {
           role: "system",
           content: 
-            "You are an AI assistant helping an introverted user maintain social connections. Generate a friendly, low-pressure conversation starter message for a contact."
+            "You are an AI assistant specializing in relationship psychology and communication. Help an introverted user maintain meaningful social connections by generating personalized, thoughtful conversation starters that feel natural and authentic.\n\n" +
+            "Consider the following in your suggestions:\n" +
+            "- Relationship type and dynamics (friends need different approaches than family)\n" +
+            "- Time since last contact (longer periods require more gentle re-engagement)\n" +
+            "- The contact's interests and previous conversation topics\n" +
+            "- Any special contexts or occasions\n" +
+            "- The psychological comfort of an introverted sender\n\n" +
+            "Your suggestions should be:\n" +
+            "- Authentic and personal, never generic\n" +
+            "- Concise and clear (under 25 words)\n" +
+            "- Low-pressure and non-demanding\n" +
+            "- Conversation-starting rather than just greeting\n" +
+            "- Appropriate for the relationship type and history"
         },
         {
           role: "user",
-          content: 
-            `I need to reconnect with ${contactName} who is my ${relationshipType}. ${interestsText}\n\nPlease suggest a friendly, casual conversation starter that is concise (under 20 words) and doesn't feel demanding. The message should be something an introverted person would feel comfortable sending.`
+          content: `I need to reconnect with ${contactName} who is my ${relationshipType}. 
+${interestsText}
+${timeContext}
+${messageHistory}
+${specialOccasion}
+
+Please generate a thoughtful conversation starter along with analysis of its tone, relevance to our relationship context, and a few alternative options I could use instead.
+
+Respond in JSON format with: message, tone_analysis, context_relevance, and alternative_options.`
         }
-      ]
+      ],
+      response_format: { type: "json_object" },
     });
 
-    const messageContent = response.choices[0]?.message?.content;
-    return messageContent ? messageContent.replace(/^["']|["']$/g, '') : `Hey ${contactName}, just wanted to check in and see how you're doing!`;
+    const result = JSON.parse(response.choices[0].message.content || '{}');
+    return {
+      message: result.message || `Hey ${contactName}, just wanted to check in and see how you're doing!`,
+      tone_analysis: result.tone_analysis || 'Casual and friendly tone suitable for reconnecting.',
+      context_relevance: result.context_relevance || 'General check-in message.',
+      alternative_options: result.alternative_options || [`Hi ${contactName}, hope you've been well!`]
+    };
   } catch (error) {
     console.error("OpenAI API error:", error);
-    return `Hey ${contactName}, just wanted to check in and see how you're doing!`;
+    return {
+      message: `Hey ${contactName}, just wanted to check in and see how you're doing!`,
+      tone_analysis: 'Casual and friendly tone suitable for reconnecting.',
+      context_relevance: 'General check-in message.',
+      alternative_options: [`Hi ${contactName}, hope you've been well!`]
+    };
   }
 }
