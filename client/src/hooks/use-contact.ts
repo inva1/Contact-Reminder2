@@ -123,3 +123,44 @@ export function useGenerateSuggestion() {
     },
   });
 }
+
+export function useContactAnalysis(id: string | number) {
+  return useQuery({
+    queryKey: [`/api/contacts/${id}/analysis`],
+    enabled: !!id
+  });
+}
+
+export function useSuggestionAlternatives(id: string | number) {
+  return useQuery({
+    queryKey: [`/api/contacts/${id}/suggestion-alternatives`],
+    enabled: !!id
+  });
+}
+
+export function useUpdateSuggestion() {
+  return useMutation({
+    mutationFn: async ({
+      id,
+      suggestion,
+    }: {
+      id: string | number;
+      suggestion: string;
+    }) => {
+      const res = await apiRequest(
+        "PUT",
+        `/api/contacts/${id}/suggestion`,
+        { suggestion }
+      );
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: [`/api/contacts/${variables.id}/suggestion`],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/contacts/${variables.id}`],
+      });
+    },
+  });
+}

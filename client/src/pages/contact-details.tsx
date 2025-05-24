@@ -4,28 +4,50 @@ import { useParams, useLocation } from "wouter";
 import { 
   useContact, 
   useContactMessages, 
-  useGenerateSuggestion 
+  useGenerateSuggestion,
+  useContactAnalysis,
+  useSuggestionAlternatives,
+  useUpdateSuggestion
 } from "@/hooks/use-contact";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, RefreshCw, MessageSquare, Plus } from "lucide-react";
+import { 
+  ArrowLeft, 
+  RefreshCw, 
+  MessageSquare, 
+  Plus, 
+  Send, 
+  Star, 
+  StarOff, 
+  Phone, 
+  Calendar, 
+  Clock
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ImportChatModal from "@/components/contacts/import-chat-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { ContactWithSuggestion } from "@shared/schema";
+import ContactAnalysis from "@/components/contacts/contact-analysis";
+import SuggestionAlternatives from "@/components/contacts/suggestion-alternatives";
 
 export default function ContactDetails() {
   const { id } = useParams();
   const [_, setLocation] = useLocation();
   const [showImportModal, setShowImportModal] = useState(false);
+  const [activeTab, setActiveTab] = useState("messages");
   const { toast } = useToast();
   const [setupComplete] = useLocalStorage("setupComplete", false);
   
   const { data: contact, isLoading: contactLoading } = useContact(id || "");
   const { data: messages, isLoading: messagesLoading } = useContactMessages(id || "");
+  const { data: analysis, isLoading: analysisLoading } = useContactAnalysis(id || "");
+  const { data: alternatives, isLoading: alternativesLoading } = useSuggestionAlternatives(id || "");
+  
   const generateSuggestion = useGenerateSuggestion();
+  const updateSuggestion = useUpdateSuggestion();
   
   const navigateBack = () => {
     setLocation("/");
@@ -124,7 +146,7 @@ export default function ContactDetails() {
       </header>
       
       <section className="px-6 py-4">
-        {/* Contact Info and Suggestion */}
+        {/* Contact Info and Suggestion Card */}
         <Card className="mb-6">
           <CardContent className="pt-6">
             {contactLoading ? (
@@ -136,25 +158,66 @@ export default function ContactDetails() {
                 </div>
               </div>
             ) : (
-              <div className="flex items-center mb-4">
-                <div className={`h-12 w-12 rounded-full ${(contact as ContactWithSuggestion)?.name?.toLowerCase().includes("mom") ? "bg-secondary" : "bg-primary"} text-white flex items-center justify-center mr-3`}>
-                  <span>{getInitials((contact as ContactWithSuggestion)?.name || "")}</span>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <div className={`h-12 w-12 rounded-full ${(contact as ContactWithSuggestion)?.name?.toLowerCase().includes("mom") ? "bg-secondary" : "bg-primary"} text-white flex items-center justify-center mr-3`}>
+                    <span>{getInitials((contact as ContactWithSuggestion)?.name || "")}</span>
+                  </div>
+                  <div>
+                    <h2 className="font-medium text-lg">{(contact as ContactWithSuggestion)?.name}</h2>
+                    <p className="text-sm text-muted-foreground">{(contact as ContactWithSuggestion)?.phone}</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="font-medium text-lg">{(contact as ContactWithSuggestion)?.name}</h2>
-                  <p className="text-sm text-muted-foreground">{(contact as ContactWithSuggestion)?.phone}</p>
+                
+                {/* Status badges */}
+                <div className="flex flex-col items-end">
+                  {(contact as ContactWithSuggestion)?.is_favorite && (
+                    <Badge variant="secondary" className="mb-1">
+                      <Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-400" />
+                      Favorite
+                    </Badge>
+                  )}
+                  {(contact as ContactWithSuggestion)?.priority_level && (contact as ContactWithSuggestion)?.priority_level > 3 && (
+                    <Badge variant="outline" className="bg-primary/10">
+                      Priority Contact
+                    </Badge>
+                  )}
                 </div>
               </div>
             )}
             
+            {/* Conversation Starter Section */}
             <div className="mb-4">
-              <h3 className="text-sm font-medium mb-2">Conversation Starter</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium">Conversation Starter</h3>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-7 text-xs"
+                  onClick={handleRefreshSuggestion}
+                  disabled={generateSuggestion.isPending}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Refresh
+                </Button>
+              </div>
+              
               {contactLoading ? (
                 <Skeleton className="h-20 w-full rounded-lg" />
               ) : (contact as ContactWithSuggestion)?.suggestion ? (
-                <p className="bg-muted p-3 rounded-lg italic text-sm">
-                  {(contact as ContactWithSuggestion).suggestion}
-                </p>
+                <div className="bg-muted p-3 rounded-lg italic text-sm relative group">
+                  <p>{(contact as ContactWithSuggestion).suggestion}</p>
+                  <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 rounded-full w-7 p-0"
+                      onClick={() => navigator.clipboard.writeText((contact as ContactWithSuggestion).suggestion || "")}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 <p className="bg-muted p-3 rounded-lg text-sm">
                   No suggestion available. Try importing chat messages to generate one.
@@ -162,20 +225,21 @@ export default function ContactDetails() {
               )}
             </div>
             
+            {/* Action Buttons */}
             <div className="flex space-x-2">
               <Button 
                 className="flex items-center" 
                 onClick={openWhatsApp}
                 disabled={contactLoading || !contact}
               >
-                <MessageSquare className="h-4 w-4 mr-1" />
+                <Send className="h-4 w-4 mr-1" />
                 Message
               </Button>
               <Button 
                 variant="outline" 
                 className="flex items-center" 
-                onClick={handleRefreshSuggestion}
-                disabled={contactLoading || generateSuggestion.isPending}
+                onClick={() => setShowImportModal(true)}
+                disabled={contactLoading}
               >
                 <RefreshCw className={`h-4 w-4 mr-1 ${generateSuggestion.isPending ? "animate-spin" : ""}`} />
                 New Suggestion
