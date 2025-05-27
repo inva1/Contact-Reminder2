@@ -1,61 +1,148 @@
-import express, { type Express } from "express";
+import express, { type Express, Response, NextFunction } from "express"; // Removed Request here, will use AuthenticatedRequest
 import { createServer, type Server } from "http";
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { storage } from "./storage";
+import { authenticateToken } from './middleware/auth'; // Import the auth middleware
 import { z } from "zod";
 import { 
   insertContactSchema, 
   insertMessageSchema, 
   insertSuggestionSchema, 
-  insertSettingsSchema 
+  insertSettingsSchema,
+  users,
+  type User as DbUser, // Renaming to avoid conflict with Express.User
+  type Contact,        // Import Contact type
+  type Suggestion      // Import Suggestion type
 } from "@shared/schema";
 import { analyzeChat, generateSuggestion } from "./openai";
+import { addDays, isBefore, startOfDay } from 'date-fns'; // Date utility functions
+
+// JWT_SECRET is already defined in middleware/auth.ts, ensure consistency or centralize
+const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-and-long-jwt-key"; 
+if (JWT_SECRET === "your-super-secret-and-long-jwt-key" && process.env.NODE_ENV !== 'test') { // Added a check for test environment
+  console.warn("Warning: JWT_SECRET is using a default insecure value. Please set a strong secret in your environment variables.");
+}
+
+// Define an interface for requests that have the user object
+interface AuthenticatedRequest extends express.Request {
+  user?: {
+    userId: number;
+    username: string;
+  };
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const router = express.Router();
   
-  // Default user ID for demo (normally would use auth)
-  const DEFAULT_USER_ID = 1;
+  // === Auth API ===
+
+  // Register a new user
+  router.post("/auth/register", async (req: AuthenticatedRequest, res: Response) => {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: "Username and password are required" });
+    }
+
+    try {
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(409).json({ message: "Username already exists" });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10); // Salt rounds: 10
+      const newUser = await storage.createUser({ username, password: hashedPassword });
+      
+      // Exclude password from the returned user object
+      const { password: _, ...userWithoutPassword } = newUser;
+      res.status(201).json({ message: "User registered successfully", user: userWithoutPassword });
+
+    } catch (error) {
+      console.error("Registration error:", error);
+      if (error instanceof z.ZodError) { // Should not happen with manual validation here, but good practice
+        return res.status(400).json({ message: error.errors });
+      }
+      res.status(500).json({ message: "Failed to register user" });
+    }
+  });
+
+  // Login a user
+  router.post("/auth/login", async (req: AuthenticatedRequest, res: Response) => {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: "Username and password are required" });
+    }
+
+    try {
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+
+      const token = jwt.sign(
+        { userId: user.id, username: user.username },
+        JWT_SECRET,
+        { expiresIn: '1h' } // Token expires in 1 hour
+      );
+
+      res.json({ message: "Login successful", token });
+
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Failed to login user" });
+    }
+  });
+
 
   // === Contacts API ===
+  // All routes below this will be protected by authenticateToken middleware
+  router.use(authenticateToken); // Apply middleware to all subsequent routes in this router
   
   // Get all contacts
-  router.get("/contacts", async (req, res) => {
-    const contacts = await storage.getContacts(DEFAULT_USER_ID);
-    
-    // Get latest suggestion for each contact
-    const contactsWithSuggestions = await Promise.all(
-      contacts.map(async (contact) => {
-        const suggestion = await storage.getSuggestion(contact.id);
-        
-        // Calculate days since last contact
-        const daysSinceLastContact = contact.last_contact_date 
-          ? Math.floor((Date.now() - contact.last_contact_date.getTime()) / (1000 * 60 * 60 * 24))
+  router.get("/contacts", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
+    try {
+      const contactsFromDb = await storage.getContactsWithLatestSuggestions(userId);
+      
+      const contactsWithDays = contactsFromDb.map(contact => {
+        const daysSinceLastContact = contact.last_contact_date
+          ? Math.floor((Date.now() - new Date(contact.last_contact_date).getTime()) / (1000 * 60 * 60 * 24))
           : null;
-        
         return {
           ...contact,
-          suggestion: suggestion?.suggestion,
-          daysSinceLastContact
+          // suggestion field is already part of contact from getContactsWithLatestSuggestions
+          daysSinceLastContact,
         };
-      })
-    );
-    
-    res.json(contactsWithSuggestions);
+      });
+      res.json(contactsWithDays);
+    } catch (error) {
+      console.error("Error fetching contacts with suggestions:", error);
+      res.status(500).json({ message: "Failed to fetch contacts" });
+    }
   });
   
   // Get a single contact
-  router.get("/contacts/:id", async (req, res) => {
+  router.get("/contacts/:id", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
-    const contact = await storage.getContact(id);
-    if (!contact) {
-      return res.status(404).json({ message: "Contact not found" });
+    const contact = await storage.getContact(id, userId); // Pass userId here
+    // Important: Verify that the contact belongs to the authenticated user (already done by storage.getContact)
+    if (!contact) { // storage.getContact now ensures it belongs to user or returns null
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
     }
     
-    const suggestion = await storage.getSuggestion(contact.id);
+    const suggestion = await storage.getSuggestion(contact.id, userId); // Pass userId here
     
     // Calculate days since last contact
     const daysSinceLastContact = contact.last_contact_date 
@@ -70,11 +157,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create a new contact
-  router.post("/contacts", async (req, res) => {
+  router.post("/contacts", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
+
     try {
       const data = insertContactSchema.parse({
         ...req.body,
-        user_id: DEFAULT_USER_ID
+        user_id: userId 
       });
       
       const contact = await storage.createContact(data);
@@ -88,19 +177,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update a contact
-  router.patch("/contacts/:id", async (req, res) => {
+  router.patch("/contacts/:id", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
-    const contact = await storage.getContact(id);
-    if (!contact) {
-      return res.status(404).json({ message: "Contact not found" });
+    const existingContact = await storage.getContact(id);
+    if (!existingContact || existingContact.user_id !== userId) {
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
     }
     
     try {
-      const updatedContact = await storage.updateContact(id, req.body);
+      // Ensure user_id is not changed to another user's ID via req.body
+      const updateData = { ...req.body, user_id: userId };
+      const updatedContact = await storage.updateContact(id, updateData);
       res.json(updatedContact);
     } catch (error) {
       res.status(500).json({ message: "Failed to update contact" });
@@ -108,15 +200,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Delete a contact
-  router.delete("/contacts/:id", async (req, res) => {
+  router.delete("/contacts/:id", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
-    const deleted = await storage.deleteContact(id);
+    const contact = await storage.getContact(id);
+    if (!contact || contact.user_id !== userId) {
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
+    }
+
+    const deleted = await storage.deleteContact(id); // PostgresStorage.deleteContact already checks user_id
     if (!deleted) {
-      return res.status(404).json({ message: "Contact not found" });
+      // This condition might be tricky depending on how deleteContact signals "not found for this user" vs other errors
+      return res.status(404).json({ message: "Failed to delete contact or contact not found" });
     }
     
     res.json({ success: true });
@@ -125,15 +224,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // === Messages API ===
   
   // Get messages for a contact
-  router.get("/contacts/:id/messages", async (req, res) => {
+  router.get("/contacts/:id/messages", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const contactId = parseInt(req.params.id);
     if (isNaN(contactId)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
-    const contact = await storage.getContact(contactId);
-    if (!contact) {
-      return res.status(404).json({ message: "Contact not found" });
+    const contact = await storage.getContact(contactId, userId); // Pass userId here
+    if (!contact) { // storage.getContact now ensures it belongs to user or returns null
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
     }
     
     const messages = await storage.getMessages(contactId);
@@ -141,15 +241,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Import chat messages
-  router.post("/contacts/:id/import", async (req, res) => {
+  router.post("/contacts/:id/import", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const contactId = parseInt(req.params.id);
     if (isNaN(contactId)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
     const contact = await storage.getContact(contactId);
-    if (!contact) {
-      return res.status(404).json({ message: "Contact not found" });
+    if (!contact || contact.user_id !== userId) {
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
     }
     
     try {
@@ -214,7 +315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updateData.interests = topicsJson;
         }
         
-        await storage.updateContact(contactId, updateData);
+        await storage.updateContact(contactId, userId, updateData); // Pass userId here
       }
       
       res.json({ 
@@ -238,13 +339,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Add a message
-  router.post("/contacts/:id/messages", async (req, res) => {
+  router.post("/contacts/:id/messages", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const contactId = parseInt(req.params.id);
     if (isNaN(contactId)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
+    const contact = await storage.getContact(contactId);
+    if (!contact || contact.user_id !== userId) {
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
+    }
+
     try {
+      // Note: message schema in shared/schema.ts does not have user_id.
+      // Ownership is through contact.
       const data = insertMessageSchema.parse({
         ...req.body,
         contact_id: contactId
@@ -263,13 +372,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // === Suggestions API ===
   
   // Get suggestion for a contact
-  router.get("/contacts/:id/suggestion", async (req, res) => {
+  router.get("/contacts/:id/suggestion", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const contactId = parseInt(req.params.id);
     if (isNaN(contactId)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
-    const suggestion = await storage.getSuggestion(contactId);
+    const contact = await storage.getContact(contactId);
+    if (!contact || contact.user_id !== userId) {
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
+    }
+
+    const suggestion = await storage.getSuggestion(contactId); // PostgresStorage.getSuggestion checks user_id via contact
     if (!suggestion) {
       return res.status(404).json({ message: "No suggestion found" });
     }
@@ -278,15 +393,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Generate a new suggestion
-  router.post("/contacts/:id/suggestion", async (req, res) => {
+  router.post("/contacts/:id/suggestion", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     const contactId = parseInt(req.params.id);
     if (isNaN(contactId)) {
       return res.status(400).json({ message: "Invalid contact ID" });
     }
     
     const contact = await storage.getContact(contactId);
-    if (!contact) {
-      return res.status(404).json({ message: "Contact not found" });
+    if (!contact || contact.user_id !== userId) {
+      return res.status(404).json({ message: "Contact not found or unauthorized" });
     }
     
     try {
@@ -389,49 +505,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // === Settings API ===
   
   // Get user settings
-  router.get("/settings", async (req, res) => {
-    const settings = await storage.getSettings(DEFAULT_USER_ID);
+  router.get("/settings", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
+    let settings = await storage.getSettings(userId);
     
     if (!settings) {
       // Create default settings if none exist
-      const defaultSettings = await storage.createSettings({
-        user_id: DEFAULT_USER_ID,
+      // Ensure all required fields for InsertSettings are provided, or that your DB schema has defaults
+      settings = await storage.createSettings({
+        user_id: userId,
         reminder_enabled: true,
-        reminder_frequency: 14,
-        cloud_backup_enabled: true,
+        reminder_frequency: 14, // Default value
+        cloud_backup_enabled: false, // Default value
+        notify_new_suggestions: true, // Default value
+        notify_missed_connections: true, // Default value
+        privacy_mode: false, // Default value
+        language_preference: 'en', // Default value
+        preferred_contact_method: 'email', // Default value
         theme: "system"
       });
-      
-      return res.json(defaultSettings);
     }
-    
     res.json(settings);
   });
   
   // Update settings
-  router.patch("/settings", async (req, res) => {
+  router.patch("/settings", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
     try {
-      let settings = await storage.getSettings(DEFAULT_USER_ID);
+      // Ensure req.body does not include user_id to prevent changing ownership
+      const { user_id, ...settingsData } = req.body;
+      const updatedSettings = await storage.updateSettings(userId, settingsData);
       
-      if (!settings) {
-        // Create settings if they don't exist
-        settings = await storage.createSettings({
-          ...req.body,
-          user_id: DEFAULT_USER_ID
-        });
-      } else {
-        // Update existing settings
-        settings = await storage.updateSettings(DEFAULT_USER_ID, req.body);
+      if (!updatedSettings) {
+         // If settings didn't exist, let's try to create them.
+        // This matches behavior of MemStorage and common UX expectation.
+        const newSettings = await storage.createSettings({ ...settingsData, user_id: userId });
+        return res.json(newSettings);
       }
-      
-      res.json(settings);
+      res.json(updatedSettings);
     } catch (error) {
+      console.error("Error updating settings:", error);
       res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // === Reminders API ===
+  router.get("/reminders/pending", async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.userId;
+
+    try {
+      const userSettings = await storage.getSettings(userId);
+      if (!userSettings || !userSettings.reminder_enabled) {
+        return res.json([]); // Reminders disabled or no settings found
+      }
+
+      const contacts = await storage.getContacts(userId);
+      const pendingReminders = [];
+      const today = startOfDay(new Date()); // Compare with the start of today
+
+      for (const contact of contacts) {
+        if (contact.last_contact_date && contact.reminder_frequency != null) {
+          // Ensure last_contact_date is treated as a Date object
+          const lastContact = new Date(contact.last_contact_date);
+          const dueDate = startOfDay(addDays(lastContact, contact.reminder_frequency));
+
+          if (isBefore(dueDate, today) || dueDate.getTime() === today.getTime()) { // If due date is today or in the past
+            const suggestionResult = await storage.getSuggestion(contact.id); // getSuggestion should check user ownership implicitly via contact
+            if (suggestionResult) {
+              pendingReminders.push({
+                contactId: contact.id,
+                contactName: contact.name,
+                suggestion: suggestionResult.suggestion,
+                // Add other relevant details if needed by the frontend notification
+              });
+            }
+          }
+        }
+      }
+      res.json(pendingReminders);
+    } catch (error) {
+      console.error("Error fetching pending reminders:", error);
+      res.status(500).json({ message: "Failed to fetch pending reminders" });
     }
   });
   
   // Sync with cloud (dummy endpoint for now)
-  router.post("/sync", async (req, res) => {
+  router.post("/sync", async (req: AuthenticatedRequest, res: Response) => { // Ensure AuthenticatedRequest type
     // This would actually sync with a cloud service
     // For now, just return success
     res.json({ success: true, message: "Sync complete" });

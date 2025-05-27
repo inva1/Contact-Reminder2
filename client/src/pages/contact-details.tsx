@@ -18,7 +18,7 @@ import {
   Plus, 
   Send, 
   Star, 
-  StarOff, 
+  Edit, // Added Edit icon
   Phone, 
   Calendar, 
   Clock,
@@ -27,38 +27,40 @@ import {
   PieChart
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Added CardDescription
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ImportChatModal from "@/components/contacts/import-chat-modal";
+import ContactModal from "@/components/contacts/add-contact-modal"; // Renamed and will be used for editing
 import { useToast } from "@/hooks/use-toast";
-import { useLocalStorage } from "@/hooks/use-local-storage";
-import { ContactWithSuggestion } from "@shared/schema";
+import { useLocalStorage } from "@/hooks/use-local-storage"; // May not be needed if AppRouter handles setup redirect
+import { type Contact, type ContactWithSuggestion } from "@shared/schema"; // Import Contact type
 import ContactAnalysis from "@/components/contacts/contact-analysis";
 import SuggestionAlternatives from "@/components/contacts/suggestion-alternatives";
 
 export default function ContactDetails() {
   const { id } = useParams();
-  const [_, setLocation] = useLocation();
+  const [location, setLocation] = useLocation(); // Keep location for navigation
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showEditContactModal, setShowEditContactModal] = useState(false); // State for edit modal
   const [activeTab, setActiveTab] = useState("messages");
   const { toast } = useToast();
-  const [setupComplete] = useLocalStorage("setupComplete", false);
+  // const [setupComplete] = useLocalStorage("setupComplete", false); // AppRouter should handle this
   
-  const { data: contact, isLoading: contactLoading } = useContact(id || "");
+  const { data: contactData, isLoading: contactLoading, error: contactError } = useContact(id || "");
+  const contact = contactData as ContactWithSuggestion | null; // Cast for convenience
+
   const { data: messages, isLoading: messagesLoading } = useContactMessages(id || "");
   const { data: analysis, isLoading: analysisLoading } = useContactAnalysis(id || "");
   const { data: alternatives, isLoading: alternativesLoading } = useSuggestionAlternatives(id || "");
   
   const generateSuggestion = useGenerateSuggestion();
-  const updateSuggestion = useUpdateSuggestion();
+  const updateSuggestionMutation = useUpdateSuggestion(); // Renamed for clarity
   
   // Function to handle updating a suggestion
   const handleUpdateSuggestion = async (newSuggestion: string) => {
+    if (!id) return;
     try {
-      await updateSuggestion.mutateAsync({
-        id: id || "",
-        suggestion: newSuggestion
-      });
+      await updateSuggestionMutation.mutateAsync({ id, suggestion: newSuggestion });
       toast({
         title: "Suggestion updated",
         description: "Your conversation starter has been updated"
@@ -77,8 +79,9 @@ export default function ContactDetails() {
   };
   
   const handleRefreshSuggestion = async () => {
+    if (!id) return;
     try {
-      await generateSuggestion.mutateAsync(id || "");
+      await generateSuggestion.mutateAsync(id);
       toast({
         title: "Suggestion refreshed",
         description: "A new conversation starter has been generated"
@@ -94,85 +97,71 @@ export default function ContactDetails() {
   
   const openWhatsApp = () => {
     if (!contact) return;
-    
-    // Construct WhatsApp URL
-    const contactData = contact as ContactWithSuggestion;
-    const message = encodeURIComponent(contactData.suggestion || "");
-    // Remove any non-numeric characters from phone
-    const phone = contactData.phone.replace(/\D/g, "");
+    const message = encodeURIComponent(contact.suggestion || "");
+    const phone = contact.phone.replace(/\D/g, "");
     window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
   };
   
   // Group messages by date for display
   const groupedMessages = () => {
     if (!messages) return {};
-    
     const groups: Record<string, any[]> = {};
-    
     const messageArray = Array.isArray(messages) ? messages : [];
-    
     messageArray.forEach((message: any) => {
-      const date = new Date(message.timestamp).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-      
-      if (!groups[date]) {
-        groups[date] = [];
-      }
-      
+      const date = new Date(message.timestamp).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+      if (!groups[date]) groups[date] = [];
       groups[date].push(message);
     });
-    
     return groups;
   };
   
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase();
+  const getInitials = (name?: string) => {
+    if (!name) return "";
+    return name.split(" ").map((n) => n[0]).join("").toUpperCase();
   };
   
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return new Date(timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   };
-  
-  // Check if user completed setup
-  if (!setupComplete) {
-    setLocation("/setup");
-    return null;
+
+  if (contactError) {
+    return (
+      <MainLayout>
+        <div className="p-6 text-center">
+          <p className="text-destructive">Error loading contact: {contactError.message}</p>
+          <Button onClick={() => setLocation('/')} className="mt-4">Go Home</Button>
+        </div>
+      </MainLayout>
+    );
   }
+  
+  // AppRouter should handle setupComplete redirect, so removing explicit check here.
 
   return (
     <MainLayout>
       <header className="px-6 py-4 bg-card shadow-sm sticky top-0 z-10">
-        <div className="flex items-center">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="mr-2" 
-            onClick={navigateBack}
-          >
-            <ArrowLeft size={20} />
-          </Button>
-          <h1 className="text-xl font-medium">
-            {contactLoading ? <Skeleton className="h-7 w-32" /> : (contact as ContactWithSuggestion)?.name}
-          </h1>
+        <div className="flex items-center justify-between"> {/* For Edit button */}
+          <div className="flex items-center">
+            <Button variant="ghost" size="icon" className="mr-2" onClick={navigateBack}>
+              <ArrowLeft size={20} />
+            </Button>
+            <h1 className="text-xl font-medium">
+              {contactLoading ? <Skeleton className="h-7 w-32" /> : contact?.name}
+            </h1>
+          </div>
+          {!contactLoading && contact && (
+            <Button variant="outline" size="sm" onClick={() => setShowEditContactModal(true)}>
+              <Edit className="h-4 w-4 mr-1" /> Edit
+            </Button>
+          )}
         </div>
       </header>
       
       <section className="px-6 py-4">
         {/* Contact Info and Suggestion Card */}
         <Card className="mb-6">
-          <CardContent className="pt-6">
-            {contactLoading ? (
+          <CardHeader> {/* Added CardHeader for better structure if needed */}
+             {contactLoading ? (
               <div className="flex items-center mb-4">
                 <Skeleton className="h-12 w-12 rounded-full mr-3" />
                 <div>
@@ -180,30 +169,25 @@ export default function ContactDetails() {
                   <Skeleton className="h-4 w-24" />
                 </div>
               </div>
-            ) : (
-              <div className="flex items-center justify-between mb-4">
+            ) : contact ? (
+              <div className="flex items-center justify-between">
                 <div className="flex items-center">
-                  <div className={`h-12 w-12 rounded-full ${(contact as ContactWithSuggestion)?.name?.toLowerCase().includes("mom") ? "bg-secondary" : "bg-primary"} text-white flex items-center justify-center mr-3`}>
-                    <span>{getInitials((contact as ContactWithSuggestion)?.name || "")}</span>
+                  <div className={`h-12 w-12 rounded-full ${contact.name?.toLowerCase().includes("mom") ? "bg-secondary" : "bg-primary"} text-primary-foreground flex items-center justify-center mr-3`}>
+                    <span>{getInitials(contact.name)}</span>
                   </div>
                   <div>
-                    <h2 className="font-medium text-lg">{(contact as ContactWithSuggestion)?.name}</h2>
-                    <p className="text-sm text-muted-foreground">{(contact as ContactWithSuggestion)?.phone}</p>
+                    <CardTitle>{contact.name}</CardTitle>
+                    <CardDescription>{contact.phone}</CardDescription>
                   </div>
                 </div>
-                
-                {/* Status badges */}
-                <div className="flex flex-col items-end">
-                  {(contact as ContactWithSuggestion)?.is_favorite && (
-                    <Badge variant="secondary" className="mb-1">
-                      <Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-400" />
-                      Favorite
+                <div className="flex flex-col items-end space-y-1">
+                  {contact.is_favorite && (
+                    <Badge variant="secondary">
+                      <Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-400" /> Favorite
                     </Badge>
                   )}
-                  {(contact as ContactWithSuggestion)?.priority_level && (contact as ContactWithSuggestion)?.priority_level > 3 && (
-                    <Badge variant="outline" className="bg-primary/10">
-                      Priority Contact
-                    </Badge>
+                  {contact.priority_level && contact.priority_level >= 4 && ( // Assuming 4 and 5 are high priority
+                    <Badge variant="outline" className="border-primary text-primary">High Priority</Badge>
                   )}
                 </div>
               </div>
