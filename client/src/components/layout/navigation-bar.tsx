@@ -1,4 +1,7 @@
-import { Home, User, BarChart, Settings as SettingsIcon } from "lucide-react"; // Renamed Settings to SettingsIcon to avoid conflict
+import { Home, User, BarChart, Bell, Settings as SettingsIcon } from "lucide-react"; // Renamed Settings to SettingsIcon to avoid conflict
+import { useChatExportRecommendations } from "@/hooks/use-chat-export";
+import { useState } from "react";
+import ChatExportGuidanceModal from "../chat-export/guidance-modal";
 import { useLocation, Link } from "wouter";
 
 interface NavItemProps {
@@ -28,6 +31,8 @@ const NavItem: React.FC<NavItemProps> = ({ href, label, icon }) => {
 };
 
 export default function NavigationBar() {
+  const [showGuidance, setShowGuidance] = useState(false);
+  const { data: recommendations = [] } = useChatExportRecommendations();
   // Define navigation items
   const navItems = [
     { href: "/", label: "Home", icon: <Home size={24} /> },
@@ -46,4 +51,38 @@ export default function NavigationBar() {
       </div>
     </nav>
   );
+  // Add this to your existing NavigationBar component
+  const notificationItem = (
+    <div 
+      onClick={() => setShowGuidance(true)} 
+      className="cursor-pointer"
+    >
+      <div className="flex flex-col items-center p-2 text-muted-foreground relative">
+        <Bell size={24} />
+        {recommendations.length > 0 && (
+          <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs">
+            {recommendations.length}
+          </span>
+        )}
+        <span className="text-xs mt-1">Alerts</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <nav className="bg-card border-t border-border fixed bottom-0 w-full py-2 px-6 shadow-sm">
+        <div className="flex justify-around items-center">
+          {/* Your existing navigation items */}
+          {notificationItem}
+        </div>
+      </nav>
+
+      <ChatExportGuidanceModal
+        open={showGuidance}
+        onOpenChange={setShowGuidance}
+        contacts={recommendations}
+      />
+    </>
+  );  
 }
