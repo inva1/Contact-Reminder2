@@ -112,3 +112,20 @@ export interface ContactWithSuggestion extends Contact {
   lastMessagePreview?: string;
   conversationSentiment?: 'positive' | 'neutral' | 'negative';
 }
+// prompt_history table schema
+export const prompt_history = pgTable("prompt_history", {
+  id: serial("id").primaryKey(),
+  user_id: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  contact_id: integer("contact_id")
+    .notNull()
+    .references(() => contacts.id),
+  last_prompted_at: timestamp("last_prompted_at").notNull(),
+  snoozed_until: timestamp("snoozed_until"),
+});
+
+// Add the insert schema
+export const insertPromptHistorySchema = createInsertSchema(prompt_history).omit({
+  id: true,
+});
