@@ -17,6 +17,95 @@ import {
 } from "@shared/schema";
 import { analyzeChat, generateSuggestion } from "./openai";
 import { addDays, isBefore, startOfDay } from 'date-fns'; // Date utility functions
+import { eq, and, lt, gt, isNull } from "drizzle-orm";
+import { db } from "../db";
+import { prompt_history, contacts } from "../shared/schema";
+
+// GET /api/recommendations/chat-export-needed
+app.get("/api/recommendations/chat-export-needed", async (req, res) => {
+  const userId = req.user.id; // Assuming auth middleware sets this
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  
+  // Find contacts needing attention
+  const needyContacts = await db
+    .select()
+    .from(contacts)
+    .leftJoin(prompt_history, and(
+      eq(contacts.id, prompt_history.contact_id),
+      eq(prompt_history.user_id, userId)
+    ))
+    .where(and(
+      eq(contacts.user_id, userId),
+      or(
+        lt(contacts.last_message_date, thirtyDaysAgo),
+        and(
+          gt(contacts.reminder_frequency, 0),
+          lt(contacts.last_contact_date, new Date(now.getTime() - contacts.reminder_frequency * 24 * 60 * 60 * 1000))
+        )
+      ),
+      or(
+        isNull(prompt_history.last_prompted_at),
+        lt(prompt_history.last_prompted_at, new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))
+      ),
+      or(
+        isNull(prompt_history.snoozed_until),
+        lt(prompt_history.snoozed_until, now)
+      )
+    ))
+    .limit(3);
+    
+  res.json(needyContacts.map(contact => ({
+    id: contact.id,
+    name: contact.name
+  })));
+});
+
+// POST /api/recommendations/log-chat-export-prompt
+app.post("/api/recommendations/log-chat-export-prompt", async (req, res) => {
+  const { contact_id } = req.body;
+  const userId = req.user.id;
+  
+  await db
+    .insert(prompt_history)
+    .values({
+      user_id: userId,
+      contact_id,
+      last_prompted_at: new Date(),
+      snoozed_until: null
+    })
+    .onConflict(['user_id', 'contact_id'])
+    .merge({
+      last_prompted_at: new Date(),
+      snoozed_until: null
+    });
+    
+  res.json({ success: true });
+});
+
+// POST /api/recommendations/snooze-chat-export-prompt
+app.post("/api/recommendations/snooze-chat-export-prompt", async (req, res) => {
+  const { contact_id, duration_days } = req.body;
+  const userId = req.user.id;
+  
+  const snoozedUntil = new Date();
+  snoozedUntil.setDate(snoozedUntil.getDate() + duration_days);
+  
+  await db
+    .insert(prompt_history)
+    .values({
+      user_id: userId,
+      contact_id,
+      last_prompted_at: new Date(),
+      snoozed_until: snoozedUntil
+    })
+    .onConflict(['user_id', 'contact_id'])
+    .merge({
+      snoozed_until: snoozedUntil
+    });
+    
+  res.json({ success: true });
+});
 
 // JWT_SECRET is already defined in middleware/auth.ts, ensure consistency or centralize
 const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-and-long-jwt-key"; 
