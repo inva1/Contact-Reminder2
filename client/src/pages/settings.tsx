@@ -2,34 +2,36 @@ import { useState, useEffect } from "react";
 import { Settings as SettingsType } from "@shared/schema";
 import MainLayout from "@/components/layout/main-layout";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/useAuth"; // Import useAuth
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LogOut } from "lucide-react"; // Import LogOut icon
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "next-themes";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Added CardHeader, CardTitle, CardDescription
 import { apiRequest } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useLocalStorage } from "@/hooks/use-local-storage";
+// import { useLocalStorage } from "@/hooks/use-local-storage"; // setupComplete check is now handled by AppRouter/ProtectedRoute
 
 export default function Settings() {
-  const [_, setLocation] = useLocation();
+  const [location, setLocation] = useLocation(); // Use location for navigation
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
-  const [setupComplete] = useLocalStorage("setupComplete", false);
+  const { user, logout } = useAuth(); // Get user and logout from useAuth
+  // const [setupComplete] = useLocalStorage("setupComplete", false); // No longer needed here
   
   const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [reminderFrequency, setReminderFrequency] = useState("14");
   const [cloudBackupEnabled, setCloudBackupEnabled] = useState(true);
   
-  const { data: settings, isLoading: settingsLoading } = useQuery({
-    queryKey: ["/api/settings"],
+  const { data: settings, isLoading: settingsLoading } = useQuery<SettingsType | null>({ // Explicitly type data
+    queryKey: ["/api/settings"], // queryFn will be called by queryClient default
   });
   
-  const updateSettings = useMutation({
-    mutationFn: async (data: any) => {
+  const updateSettingsMutation = useMutation({ // Renamed to avoid conflict if 'updateSettings' is used elsewhere
+    mutationFn: async (data: Partial<SettingsType>) => { // Use Partial for updates
       const res = await apiRequest("PATCH", "/api/settings", data);
       return res.json();
     },
@@ -49,7 +51,7 @@ export default function Settings() {
     }
   });
   
-  const syncNow = useMutation({
+  const syncNowMutation = useMutation({ // Renamed
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/sync", {});
       return res.json();
@@ -71,21 +73,31 @@ export default function Settings() {
   
   // Initialize state from settings
   useEffect(() => {
-    if (settings && typeof settings === 'object') {
-      const settingsObj = settings as SettingsType;
-      setRemindersEnabled(settingsObj.reminder_enabled ?? false);
-      setReminderFrequency(String(settingsObj.reminder_frequency ?? 14));
-      setCloudBackupEnabled(settingsObj.cloud_backup_enabled ?? false);
+    if (settings) { // settings can be null if queryFn returns null on 401
+      setRemindersEnabled(settings.reminder_enabled ?? false);
+      setReminderFrequency(String(settings.reminder_frequency ?? 14));
+      setCloudBackupEnabled(settings.cloud_backup_enabled ?? false);
+      // Theme is handled by next-themes and persisted via its own mechanism,
+      // but we sync it to backend.
+      if (settings.theme && settings.theme !== theme) {
+        setTheme(settings.theme);
+      }
     }
-  }, [settings]);
+  }, [settings, theme, setTheme]);
   
   const navigateBack = () => {
     setLocation("/");
   };
+
+  const handleLogout = () => {
+    logout();
+    setLocation("/login", { replace: true }); // Navigate to login after logout
+    toast({ title: "Logged Out", description: "You have been successfully logged out." });
+  };
   
   const handleReminderToggle = (checked: boolean) => {
     setRemindersEnabled(checked);
-    updateSettings.mutate({ reminder_enabled: checked });
+    updateSettingsMutation.mutate({ reminder_enabled: checked });
   };
   
   const handleFrequencyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -97,63 +109,85 @@ export default function Settings() {
     const frequency = parseInt(reminderFrequency);
     if (isNaN(frequency) || frequency < 1) {
       setReminderFrequency("1");
-      updateSettings.mutate({ reminder_frequency: 1 });
+      updateSettingsMutation.mutate({ reminder_frequency: 1 });
     } else if (frequency > 90) {
       setReminderFrequency("90");
-      updateSettings.mutate({ reminder_frequency: 90 });
+      updateSettingsMutation.mutate({ reminder_frequency: 90 });
     } else {
-      updateSettings.mutate({ reminder_frequency: frequency });
+      updateSettingsMutation.mutate({ reminder_frequency: frequency });
     }
   };
   
   const handleCloudBackupToggle = (checked: boolean) => {
     setCloudBackupEnabled(checked);
-    updateSettings.mutate({ cloud_backup_enabled: checked });
+    updateSettingsMutation.mutate({ cloud_backup_enabled: checked });
   };
   
   const handleSyncNow = () => {
-    syncNow.mutate();
+    syncNowMutation.mutate();
   };
   
   // Choose theme
   const setLightTheme = () => {
     setTheme("light");
-    updateSettings.mutate({ theme: "light" });
+    updateSettingsMutation.mutate({ theme: "light" });
   };
   
   const setDarkTheme = () => {
     setTheme("dark");
-    updateSettings.mutate({ theme: "dark" });
+    updateSettingsMutation.mutate({ theme: "dark" });
   };
   
   const setSystemTheme = () => {
     setTheme("system");
-    updateSettings.mutate({ theme: "system" });
+    updateSettingsMutation.mutate({ theme: "system" });
   };
   
-  // Check if user completed setup
-  if (!setupComplete) {
-    setLocation("/setup");
-    return null;
-  }
+  // setupComplete check is now handled by AppRouter/ProtectedRoute
+  // if (!setupComplete) {
+  //   setLocation("/setup"); // This should not be reachable if ProtectedRoute is working
+  //   return null;
+  // }
 
+  if (settingsLoading) {
+    // Optionally return a loading spinner here
+    // return <MainLayout><div className="p-6">Loading settings...</div></MainLayout>;
+  }
+  
   return (
     <MainLayout>
       <header className="px-6 py-4 bg-card shadow-sm sticky top-0 z-10">
-        <div className="flex items-center">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="mr-2" 
-            onClick={navigateBack}
-          >
-            <ArrowLeft size={20} />
+        <div className="flex items-center justify-between"> {/* Changed for logout button */}
+          <div className="flex items-center">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="mr-2" 
+              onClick={navigateBack}
+            >
+              <ArrowLeft size={20} />
+            </Button>
+            <h1 className="text-xl font-medium">Settings</h1>
+          </div>
+          <Button variant="ghost" onClick={handleLogout} className="text-sm">
+            <LogOut size={16} className="mr-2" /> Logout
           </Button>
-          <h1 className="text-xl font-medium">Settings</h1>
         </div>
       </header>
       
       <section className="px-6 py-4">
+        {/* Account Section */}
+        <div className="mb-6">
+          <h2 className="text-lg font-medium mb-3">Account</h2>
+          <Card>
+            <CardHeader>
+              <CardTitle>Welcome, {user?.username || 'User'}</CardTitle>
+              <CardDescription>Manage your account and application settings.</CardDescription>
+            </CardHeader>
+            {/* Further account details or actions can go here */}
+          </Card>
+        </div>
+
         {/* Notification Settings */}
         <div className="mb-6">
           <h2 className="text-lg font-medium mb-3">Notifications</h2>
@@ -169,7 +203,7 @@ export default function Settings() {
                 <Switch 
                   checked={remindersEnabled}
                   onCheckedChange={handleReminderToggle}
-                  disabled={settingsLoading || updateSettings.isPending}
+                  disabled={settingsLoading || updateSettingsMutation.isPending}
                 />
               </div>
               
@@ -187,7 +221,7 @@ export default function Settings() {
                     min="1"
                     max="90"
                     className="w-16 mr-2"
-                    disabled={settingsLoading || updateSettings.isPending}
+                    disabled={settingsLoading || updateSettingsMutation.isPending}
                   />
                   <span className="text-sm">days</span>
                 </div>
@@ -211,7 +245,7 @@ export default function Settings() {
                 <Switch 
                   checked={cloudBackupEnabled}
                   onCheckedChange={handleCloudBackupToggle}
-                  disabled={settingsLoading || updateSettings.isPending}
+                  disabled={settingsLoading || updateSettingsMutation.isPending}
                 />
               </div>
               
@@ -224,9 +258,9 @@ export default function Settings() {
                 </div>
                 <Button 
                   onClick={handleSyncNow}
-                  disabled={syncNow.isPending || !cloudBackupEnabled}
+                  disabled={syncNowMutation.isPending || !cloudBackupEnabled}
                 >
-                  {syncNow.isPending ? "Syncing..." : "Sync Now"}
+                  {syncNowMutation.isPending ? "Syncing..." : "Sync Now"}
                 </Button>
               </div>
             </CardContent>
