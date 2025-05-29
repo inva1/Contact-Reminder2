@@ -40,8 +40,9 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
   },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
     globals: true,
     include: ['**/*.test.ts', '**/*.spec.ts', '**/*.test.tsx', '**/*.spec.tsx'],
+    setupFiles: ['./client/src/setupTests.ts'],
   },
 });
