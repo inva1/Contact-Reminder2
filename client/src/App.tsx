@@ -13,7 +13,7 @@ import Settings from "@/pages/settings";
 import ProtectedRoute from "./components/ProtectedRoute"; // Import ProtectedRoute
 import { useAuth } from "./hooks/useAuth";
 import { useLocalStorage } from "./hooks/use-local-storage";
-import { Spinner } from "./components/ui/spinner"; // Assuming a spinner component
+import Spinner from "./components/ui/spinner";
 import React, { useEffect } from "react";
 
 

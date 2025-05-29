@@ -314,7 +314,39 @@ export default function ContactDetails() {
               </Button>
             </div>
             
-            {messagesLoading ? ( /* ... skeletons ... */ ) : (Array.isArray(messages) && messages.length === 0) ? ( /* ... no messages ... */ ) : ( /* ... display messages ... */ )}
+            {messagesLoading ? (
+              <>
+                <Skeleton className="h-10 w-full mb-3" />
+                <Skeleton className="h-10 w-full mb-3" />
+                <Skeleton className="h-10 w-3/4" />
+              </>
+            ) : (Array.isArray(messages) && messages.length === 0) ? (
+              <div className="text-center text-muted-foreground py-8">
+                <MessageSquare size={48} className="mx-auto mb-2 opacity-50" />
+                <p>No messages yet.</p>
+                <p className="text-sm">Import your chat history to get started.</p>
+              </div>
+            ) : (
+              <div>
+                {Object.entries(groupedMessages()).map(([date, msgsInGroup]: [string, any[]]) => (
+                  <div key={date} className="mb-4">
+                    <div className="flex justify-center my-2">
+                      <Badge variant="outline" className="text-xs">{date}</Badge>
+                    </div>
+                    {msgsInGroup.map((msg: any) => (
+                      <div key={msg.id} className={`flex mb-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`p-2 rounded-lg max-w-[70%] ${msg.sender === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                          <p className="text-sm">{msg.text}</p>
+                          <p className={`text-xs mt-1 ${msg.sender === 'user' ? 'text-primary-foreground/80' : 'text-muted-foreground/80'} text-right`}>
+                            {formatTime(msg.timestamp)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
           
           <TabsContent value="analysis">
@@ -344,7 +376,22 @@ export default function ContactDetails() {
           <h2 className="text-lg font-medium mb-3">Details</h2>
           <Card>
             <CardContent className="pt-6">
-              {contactLoading ? ( /* ... skeletons ... */ ) : (
+              {contactLoading ? (
+                <>
+                  <div className="mb-3">
+                    <Skeleton className="h-4 w-1/4 mb-2" /> {/* Title: Interests */}
+                    <Skeleton className="h-6 w-full" />      {/* Content */}
+                  </div>
+                  <div className="mb-3">
+                    <Skeleton className="h-4 w-1/4 mb-2" /> {/* Title: Relationship */}
+                    <Skeleton className="h-6 w-1/2" />      {/* Content */}
+                  </div>
+                  <div>
+                    <Skeleton className="h-4 w-1/3 mb-2" /> {/* Title: Reminder Frequency */}
+                    <Skeleton className="h-6 w-3/4" />      {/* Content */}
+                  </div>
+                </>
+              ) : (
                 <>
                   <div className="mb-3">
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Interests</h3>
