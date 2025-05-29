@@ -1,9 +1,12 @@
-import OpenAI from "openai";
+import { AzureOpenAI } from "openai";
 
 // Using OpenAI for chat analysis and suggestion generation
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY
+const openai = new AzureOpenAI({
+  apiKey: process.env.AZURE_OPENAI_API_KEY,
+  endpoint: process.env.AZURE_OPENAI_API_ENDPOINT,
+  deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME, // Default model for requests
+  apiVersion: process.env.AZURE_OPENAI_API_VERSION,
 });
 
 interface Message {
@@ -35,7 +38,7 @@ export async function analyzeChat(
     ).join('\n');
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // Using the latest OpenAI model
+      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME, // Using the latest OpenAI model
       messages: [
         {
           role: "system",
@@ -128,7 +131,7 @@ export async function generateSuggestion(
       : '';
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // Using the latest OpenAI model
+      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME, // Using the latest OpenAI model
       messages: [
         {
           role: "system",
