@@ -92,7 +92,7 @@ export default function ChatExportGuidanceModal({
                 <ol className="list-decimal pl-4 space-y-2">
                   <li>Open WhatsApp and go to the chat</li>
                   <li>Tap the three dots menu (⋮) at the top right</li>
-                  <li>Select "More" > "Export chat"</li>
+                  <li>Select "More" {'>'} "Export chat"</li>
                   <li>Choose "WITHOUT MEDIA"</li>
                   <li>Save or share the exported file</li>
                 </ol>

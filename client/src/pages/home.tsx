@@ -1,21 +1,23 @@
 import { useState, useEffect } from "react";
 import MainLayout from "@/components/layout/main-layout";
-import { useContacts, useUpdateContact } from "@/hooks/use-contact";
+// import { useContacts, useUpdateContact } from "@/hooks/use-contact"; // useUpdateContact is still used by ContactModal indirectly, but not directly in this file after removing dismissReminder. Let's check ContactModal usage.
+// After review, updateContactMutation is used by dismissReminder. If dismissReminder is removed, and nothing else in THIS FILE uses updateContactMutation directly, this specific import line might be simplified.
+// However, useUpdateContact is still used by the ContactModal. The hooks are fine.
+import { useContacts, useUpdateContact, useDeleteContact } from "@/hooks/use-contact"; // Keep this line as is.
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { ContactWithSuggestion } from "@shared/schema";
 import ContactCard from "@/components/contacts/contact-card";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
-import { Plus, Moon, Sun, Settings } from "lucide-react"; // Removed Edit, Trash2 as they are in ContactCard
+import { Plus, Moon, Sun, Settings } from "lucide-react";
 import { useLocation } from "wouter";
 import ContactModal from "@/components/contacts/add-contact-modal";
-import ConfirmationDialog from "@/components/shared/ConfirmationDialog"; // Import ConfirmationDialog
+import ConfirmationDialog from "@/components/shared/ConfirmationDialog";
 import { useToast } from "@/hooks/use-toast";
-import { useContacts, useUpdateContact, useDeleteContact } from "@/hooks/use-contact"; // Import useDeleteContact
-import { type Contact, type ContactWithSuggestion } from "@shared/schema";
+import { type Contact } from "@shared/schema"; // Removed ContactWithSuggestion from here as it's imported above
 
 export default function Home() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation(); // location removed as it's not used
   const { theme, setTheme } = useTheme();
   const [showContactModal, setShowContactModal] = useState(false);
   const [contactToEdit, setContactToEdit] = useState<Contact | null>(null);
@@ -24,8 +26,9 @@ export default function Home() {
   const { toast } = useToast();
   
   const contactsQuery = useContacts();
-  const updateContactMutation = useUpdateContact();
-  const deleteContactMutation = useDeleteContact(); // Use the hook
+  // const updateContactMutation = useUpdateContact(); // This instance is unused if dismissReminder is removed.
+                                                 // The ContactModal uses its own instance from the hook.
+  const deleteContactMutation = useDeleteContact(); 
   
   const toggleDarkMode = () => {
     setTheme(theme === "dark" ? "light" : "dark");
@@ -65,41 +68,23 @@ export default function Home() {
         variant: "destructive",
       });
     } finally {
-      setContactIdToDelete(null); // Reset for next time
+      setContactIdToDelete(null); 
       // setShowDeleteConfirm(false); // Dialog onOpenChange handles this
     }
   };
   
-  const dismissReminder = async (contactId: number) => {
-    try {
-      await updateContactMutation.mutateAsync({
-        id: contactId,
-        data: { 
-          last_contact_date: new Date().toISOString() as any,
-        }
-      });
-      toast({
-        title: "Reminder dismissed",
-        description: "We'll remind you again in the future"
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Could not dismiss reminder",
-        variant: "destructive"
-      });
-    }
-  };
+  // Removed dismissReminder function
+  // const dismissReminder = async (contactId: number) => { ... };
   
   const contacts = (contactsQuery.data as ContactWithSuggestion[] || []).sort((a, b) => {
-    if (a.is_favorite && !b.is_favorite) return -1;
+    if (a.is_favorite && !b.is_favorite) return -1; // is_favorite from Drizzle is camelCase
     if (!a.is_favorite && b.is_favorite) return 1;
-    if ((a.priority_level || 0) > (b.priority_level || 0)) return -1;
+    if ((a.priority_level || 0) > (b.priority_level || 0)) return -1; // priority_level from Drizzle is camelCase
     if ((a.priority_level || 0) < (b.priority_level || 0)) return 1;
     return (a.name || '').localeCompare(b.name || '');
   });
   
-  const allContacts = contacts; // Simplified for now
+  const allContacts = contacts; 
 
   return (
     <MainLayout>
@@ -120,7 +105,7 @@ export default function Home() {
       <section className="px-6 py-4">
         {contactsQuery.isLoading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-40 rounded-lg" />)} {/* Increased skeleton height */}
+            {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-40 rounded-lg" />)}
           </div>
         )}
         {contactsQuery.isError && (
@@ -144,7 +129,6 @@ export default function Home() {
                 onMessageClick={() => setLocation(`/contact/${contact.id}`)}
                 onEdit={() => handleOpenEditModal(contact as Contact)}
                 onDelete={() => handleDeleteRequest(contact.id)}
-                // onDismiss={() => dismissReminder(contact.id)} // Example, if still needed
               />
             ))}
           </div>

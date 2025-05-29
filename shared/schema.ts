@@ -43,9 +43,12 @@ export const suggestions = pgTable("suggestions", {
   suggestion: text("suggestion").notNull(),
   topics: text("topics"), // JSON string of identified topics from chat
   context: text("context"), // Additional context for this suggestion
-  used: boolean("used").default(false), // Track if this suggestion was used
-  effectiveness: integer("effectiveness"), // Rating of how effective the suggestion was
+  used: boolean("used").default(false), 
+  effectiveness: integer("effectiveness"), 
   created_at: timestamp("created_at").notNull(),
+  // New fields for fallback indication
+  source: text("source"), // e.g., "openai", "fallback"
+  error_message: text("error_message"), // Store a generic error message if fallback
 });
 
 export const settings = pgTable("settings", {
@@ -78,6 +81,7 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
 });
 
+// insertSuggestionSchema will now include source and error_message as optional fields
 export const insertSuggestionSchema = createInsertSchema(suggestions).omit({
   id: true,
 });
@@ -88,31 +92,34 @@ export const insertSettingsSchema = createInsertSchema(settings).omit({
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type User = typeof users.$inferSelect; // Will have camelCase properties
 
-export type InsertContact = z.infer<typeof insertContactSchema>;
-export type Contact = typeof contacts.$inferSelect;
+export type InsertContact = z.infer<typeof insertContactSchema>; // Will have snake_case properties
+export type Contact = typeof contacts.$inferSelect; // Will have camelCase properties
 
-export type InsertMessage = z.infer<typeof insertMessageSchema>;
-export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>; // Will have snake_case properties
+export type Message = typeof messages.$inferSelect; // Will have camelCase properties
 
-export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
-export type Suggestion = typeof suggestions.$inferSelect;
+// Suggestion type will now include source and errorMessage (camelCase)
+export type Suggestion = typeof suggestions.$inferSelect; 
+// InsertSuggestion type will now include source and error_message (snake_case)
+export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>; 
 
-export type InsertSettings = z.infer<typeof insertSettingsSchema>;
-export type Settings = typeof settings.$inferSelect;
+export type InsertSettings = z.infer<typeof insertSettingsSchema>; // Will have snake_case properties
+export type Settings = typeof settings.$inferSelect; // Will have camelCase properties
 
 // Client-side types
 export interface ContactWithSuggestion extends Contact {
-  suggestion?: string;
-  topics?: string[];
+  suggestion?: string; // This is the actual suggestion text
+  suggestion_details?: Partial<Suggestion>; // To hold the full suggestion object including source, etc.
+  topics?: string[]; // This seems to be from an older structure, analyzeChat returns topics
   daysSinceLastContact?: number;
-  interactionScore?: number; // Measure of how active the relationship is
+  interactionScore?: number; 
   reminderStatus?: 'upcoming' | 'due' | 'overdue' | 'none';
   lastMessagePreview?: string;
   conversationSentiment?: 'positive' | 'neutral' | 'negative';
 }
-// prompt_history table schema
+
 export const prompt_history = pgTable("prompt_history", {
   id: serial("id").primaryKey(),
   user_id: integer("user_id")
@@ -125,7 +132,6 @@ export const prompt_history = pgTable("prompt_history", {
   snoozed_until: timestamp("snoozed_until"),
 });
 
-// Add the insert schema
 export const insertPromptHistorySchema = createInsertSchema(prompt_history).omit({
   id: true,
 });

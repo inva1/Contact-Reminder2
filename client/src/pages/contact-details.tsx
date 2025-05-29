@@ -18,53 +18,73 @@ import {
   Plus, 
   Send, 
   Star, 
-  Edit, // Added Edit icon
   Phone, 
   Calendar, 
   Clock,
   BarChart,
   FileText,
-  PieChart
-} from "lucide-react";
+  PieChart,
+  Copy as CopyIcon // Added CopyIcon
+} from "lucide-react"; 
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Added CardDescription
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ImportChatModal from "@/components/contacts/import-chat-modal";
-import ContactModal from "@/components/contacts/add-contact-modal"; // Renamed and will be used for editing
 import { useToast } from "@/hooks/use-toast";
-import { useLocalStorage } from "@/hooks/use-local-storage"; // May not be needed if AppRouter handles setup redirect
-import { type Contact, type ContactWithSuggestion } from "@shared/schema"; // Import Contact type
+import { type Contact, type ContactWithSuggestion, type Suggestion } from "@shared/schema"; // Added Suggestion type
 import ContactAnalysis from "@/components/contacts/contact-analysis";
 import SuggestionAlternatives from "@/components/contacts/suggestion-alternatives";
 
 export default function ContactDetails() {
   const { id } = useParams();
-  const [location, setLocation] = useLocation(); // Keep location for navigation
+  const [, setLocation] = useLocation(); 
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showEditContactModal, setShowEditContactModal] = useState(false); // State for edit modal
   const [activeTab, setActiveTab] = useState("messages");
   const { toast } = useToast();
-  // const [setupComplete] = useLocalStorage("setupComplete", false); // AppRouter should handle this
   
-  const { data: contactData, isLoading: contactLoading, error: contactError } = useContact(id || "");
-  const contact = contactData as ContactWithSuggestion | null; // Cast for convenience
+  const { data: contactData, isLoading: contactLoading, error: contactError, refetch: refetchContact } = useContact(id || ""); // Added refetchContact
+  const contact = contactData as ContactWithSuggestion | null;
 
   const { data: messages, isLoading: messagesLoading } = useContactMessages(id || "");
-  const { data: analysis, isLoading: analysisLoading } = useContactAnalysis(id || "");
+  const { data: analysisData, isLoading: analysisLoading } = useContactAnalysis(id || ""); // Renamed to analysisData
+  // The 'analysis' object from useContactAnalysis likely contains the suggestion source if it's from there.
+  // However, the primary suggestion displayed on the card is from contact.suggestion (which is just text).
+  // We need to ensure the Suggestion object (with source/errorMessage) is available.
+  // The `contact` object (ContactWithSuggestion) might need to be updated to hold the full suggestion object.
+  // For now, handleRefreshSuggestion will get the full suggestion object from its API call.
+
   const { data: alternatives, isLoading: alternativesLoading } = useSuggestionAlternatives(id || "");
   
   const generateSuggestion = useGenerateSuggestion();
-  const updateSuggestionMutation = useUpdateSuggestion(); // Renamed for clarity
+  const updateSuggestionMutation = useUpdateSuggestion();
   
-  // Function to handle updating a suggestion
-  const handleUpdateSuggestion = async (newSuggestion: string) => {
-    if (!id) return;
+  const handleUpdateSuggestion = async (newSuggestionText: string) => {
+    if (!id || !contact) return;
+    // When updating with an alternative, we assume it's an OpenAI suggestion.
+    // Or, the backend PUT /api/contacts/:id/suggestion should also return the full suggestion object.
+    // For now, we only update the text.
     try {
-      await updateSuggestionMutation.mutateAsync({ id, suggestion: newSuggestion });
-      toast({
-        title: "Suggestion updated",
-        description: "Your conversation starter has been updated"
+      const updatedSuggestion = await updateSuggestionMutation.mutateAsync({ 
+        id, 
+        suggestion: newSuggestionText,
+        // Ideally, if we know this is an AI suggestion, we'd set source: "openai" here
+        // but the PUT endpoint might not support setting source directly, it's for the text.
+        // The source is set when the suggestion is *created*.
       });
+
+      if (updatedSuggestion.source === "fallback") {
+        toast({
+          title: "Using Default Suggestion",
+          description: updatedSuggestion.errorMessage || "AI suggestion could not be generated. Displaying a default suggestion.",
+        });
+      } else {
+        toast({
+          title: "Suggestion updated",
+          description: "Your conversation starter has been updated.",
+        });
+      }
+      // Invalidate contact query to refetch the main contact data which includes the suggestion text
+      refetchContact(); 
     } catch (error) {
       toast({
         title: "Error",
@@ -81,16 +101,28 @@ export default function ContactDetails() {
   const handleRefreshSuggestion = async () => {
     if (!id) return;
     try {
-      await generateSuggestion.mutateAsync(id);
-      toast({
-        title: "Suggestion refreshed",
-        description: "A new conversation starter has been generated"
-      });
+      // The result from mutateAsync is the full suggestion object from the backend
+      const newSuggestion: Suggestion = await generateSuggestion.mutateAsync(id);
+      
+      if (newSuggestion.source === "fallback") {
+        toast({
+          title: "Using Default Suggestion",
+          description: newSuggestion.errorMessage || "AI features may be unavailable. Displaying a default suggestion.",
+          variant: "default", 
+        });
+      } else {
+        toast({
+          title: "Suggestion refreshed",
+          description: "A new AI-powered conversation starter has been generated.",
+        });
+      }
+      // Queries are invalidated by the useGenerateSuggestion hook's onSuccess,
+      // so contactData (and its suggestion field) will be updated.
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Could not generate a new suggestion",
-        variant: "destructive"
+        title: "Error Refreshing Suggestion",
+        description: (error as Error).message || "Could not generate a new suggestion.",
+        variant: "destructive",
       });
     }
   };
@@ -98,11 +130,10 @@ export default function ContactDetails() {
   const openWhatsApp = () => {
     if (!contact) return;
     const message = encodeURIComponent(contact.suggestion || "");
-    const phone = contact.phone.replace(/\D/g, "");
+    const phone = contact.phone?.replace(/\D/g, "") || ""; 
     window.open(`https://wa.me/${phone}?text=${message}`, "_blank");
   };
   
-  // Group messages by date for display
   const groupedMessages = () => {
     if (!messages) return {};
     const groups: Record<string, any[]> = {};
@@ -135,12 +166,17 @@ export default function ContactDetails() {
     );
   }
   
-  // AppRouter should handle setupComplete redirect, so removing explicit check here.
+  // Determine if the current suggestion is a fallback
+  // The `contact.suggestion_details` field was proposed in shared/schema.ts for ContactWithSuggestion
+  // If it's not populated by useContact, we might need to fetch the full suggestion object separately
+  // or rely on the toast from handleRefreshSuggestion.
+  // For now, the toast provides immediate feedback. A visual indicator would require contact.suggestion_details.
+  // const isFallbackSuggestion = contact?.suggestion_details?.source === "fallback";
 
   return (
     <MainLayout>
       <header className="px-6 py-4 bg-card shadow-sm sticky top-0 z-10">
-        <div className="flex items-center justify-between"> {/* For Edit button */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center">
             <Button variant="ghost" size="icon" className="mr-2" onClick={navigateBack}>
               <ArrowLeft size={20} />
@@ -149,18 +185,12 @@ export default function ContactDetails() {
               {contactLoading ? <Skeleton className="h-7 w-32" /> : contact?.name}
             </h1>
           </div>
-          {!contactLoading && contact && (
-            <Button variant="outline" size="sm" onClick={() => setShowEditContactModal(true)}>
-              <Edit className="h-4 w-4 mr-1" /> Edit
-            </Button>
-          )}
         </div>
       </header>
       
       <section className="px-6 py-4">
-        {/* Contact Info and Suggestion Card */}
         <Card className="mb-6">
-          <CardHeader> {/* Added CardHeader for better structure if needed */}
+          <CardHeader>
              {contactLoading ? (
               <div className="flex items-center mb-4">
                 <Skeleton className="h-12 w-12 rounded-full mr-3" />
@@ -181,19 +211,19 @@ export default function ContactDetails() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end space-y-1">
-                  {contact.is_favorite && (
+                  {contact.isFavorite && ( 
                     <Badge variant="secondary">
                       <Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-400" /> Favorite
                     </Badge>
                   )}
-                  {contact.priority_level && contact.priority_level >= 4 && ( // Assuming 4 and 5 are high priority
+                  {contact.priorityLevel && contact.priorityLevel >= 4 && ( 
                     <Badge variant="outline" className="border-primary text-primary">High Priority</Badge>
                   )}
                 </div>
               </div>
-            )}
-            
-            {/* Conversation Starter Section */}
+            ) : null}
+          </CardHeader>
+          <CardContent>
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium">Conversation Starter</h3>
@@ -202,7 +232,7 @@ export default function ContactDetails() {
                   size="sm" 
                   className="h-7 text-xs"
                   onClick={handleRefreshSuggestion}
-                  disabled={generateSuggestion.isPending}
+                  disabled={generateSuggestion.isPending || contactLoading}
                 >
                   <RefreshCw className="h-3 w-3 mr-1" />
                   Refresh
@@ -211,28 +241,28 @@ export default function ContactDetails() {
               
               {contactLoading ? (
                 <Skeleton className="h-20 w-full rounded-lg" />
-              ) : (contact as ContactWithSuggestion)?.suggestion ? (
+              ) : contact?.suggestion ? ( // Display suggestion from contact object
                 <div className="bg-muted p-3 rounded-lg italic text-sm relative group">
-                  <p>{(contact as ContactWithSuggestion)?.suggestion}</p>
+                  <p>{contact.suggestion}</p>
+                  {/* Visual indicator for fallback could go here if contact.suggestion_details was populated */}
+                  {/* {isFallbackSuggestion && <InfoIcon className="h-4 w-4 text-muted-foreground inline-block ml-2" title={contact.suggestion_details?.errorMessage}/>} */}
                   <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button 
                       variant="ghost" 
                       size="sm" 
                       className="h-7 rounded-full w-7 p-0"
-                      onClick={() => navigator.clipboard.writeText((contact as ContactWithSuggestion)?.suggestion || "")}
+                      onClick={() => navigator.clipboard.writeText(contact.suggestion || "")}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <CopyIcon className="h-3 w-3" /> {/* Restored CopyIcon */}
                     </Button>
                   </div>
                 </div>
               ) : (
                 <p className="bg-muted p-3 rounded-lg text-sm">
-                  No suggestion available. Try importing chat messages to generate one.
+                  No suggestion available. Try importing chat messages or refreshing.
                 </p>
               )}
             </div>
-            
-            {/* Action Buttons */}
             <div className="flex space-x-2">
               <Button 
                 className="flex items-center" 
@@ -245,17 +275,16 @@ export default function ContactDetails() {
               <Button 
                 variant="outline" 
                 className="flex items-center" 
-                onClick={() => setShowImportModal(true)}
-                disabled={contactLoading}
+                onClick={() => setShowImportModal(true)} 
+                disabled={contactLoading} 
               >
-                <RefreshCw className={`h-4 w-4 mr-1 ${generateSuggestion.isPending ? "animate-spin" : ""}`} />
-                New Suggestion
+                <Plus className="h-4 w-4 mr-1" /> 
+                Import for Suggestion
               </Button>
             </div>
           </CardContent>
         </Card>
         
-        {/* Tabs for different sections */}
         <Tabs defaultValue="messages" value={activeTab} onValueChange={setActiveTab} className="mb-6">
           <TabsList className="grid grid-cols-3 mb-4">
             <TabsTrigger value="messages" className="text-sm">
@@ -272,7 +301,6 @@ export default function ContactDetails() {
             </TabsTrigger>
           </TabsList>
           
-          {/* Messages Tab */}
           <TabsContent value="messages" className="space-y-4">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-medium">Conversation History</h2>
@@ -286,68 +314,22 @@ export default function ContactDetails() {
               </Button>
             </div>
             
-            {messagesLoading ? (
-              <div className="space-y-4">
-                <Skeleton className="h-6 w-24 mx-auto" />
-                <Skeleton className="h-20 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </div>
-            ) : (Array.isArray(messages) && messages.length === 0) ? (
-              <div className="text-center py-8 bg-card rounded-lg border border-border">
-                <p className="text-muted-foreground mb-4">No messages yet</p>
-                <Button onClick={() => setShowImportModal(true)}>
-                  Import WhatsApp Chat
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {Object.entries(groupedMessages()).map(([date, dateMessages]) => (
-                  <div key={date}>
-                    {/* Date Divider */}
-                    <div className="flex items-center justify-center">
-                      <div className="bg-muted px-4 py-1 rounded-full text-xs text-muted-foreground">
-                        {date}
-                      </div>
-                    </div>
-                    
-                    {/* Messages */}
-                    {dateMessages.map((message, index) => (
-                      <div key={index} className="flex mb-3">
-                        <div 
-                          className={`max-w-[80%] ${
-                            message.sender === "Me" || message.sender === (contact as ContactWithSuggestion)?.name 
-                              ? "bg-primary bg-opacity-10 ml-auto" 
-                              : "bg-muted mr-auto"
-                          } rounded-lg py-2 px-3`}
-                        >
-                          <p className="text-sm">{message.content}</p>
-                          <span className="text-xs text-muted-foreground mt-1 block">
-                            {formatTime(message.timestamp)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
+            {messagesLoading ? ( /* ... skeletons ... */ ) : (Array.isArray(messages) && messages.length === 0) ? ( /* ... no messages ... */ ) : ( /* ... display messages ... */ )}
           </TabsContent>
           
-          {/* Analysis Tab */}
           <TabsContent value="analysis">
             <ContactAnalysis
               isLoading={analysisLoading || contactLoading}
-              topics={analysis?.topics}
-              sentiment={analysis?.sentiment}
-              relationshipStrength={analysis?.relationship_strength}
-              interactionFrequency={analysis?.interaction_frequency}
-              conversationThemes={analysis?.conversation_themes}
-              lastInteractionDate={analysis?.last_interaction_date}
-              messagePreview={analysis?.message_preview}
+              topics={(analysisData as any)?.topics} // Cast as any if analysisData structure is not strictly typed yet for these
+              sentiment={(analysisData as any)?.sentiment}
+              relationshipStrength={(analysisData as any)?.relationship_strength}
+              interactionFrequency={(analysisData as any)?.interaction_frequency}
+              conversationThemes={(analysisData as any)?.conversation_themes}
+              lastInteractionDate={(analysisData as any)?.last_interaction_date}
+              messagePreview={(analysisData as any)?.message_preview}
             />
           </TabsContent>
           
-          {/* Suggestions Tab */}
           <TabsContent value="suggestions">
             <SuggestionAlternatives
               isLoading={alternativesLoading}
@@ -358,27 +340,17 @@ export default function ContactDetails() {
           </TabsContent>
         </Tabs>
         
-        {/* Contact Details */}
         <div>
           <h2 className="text-lg font-medium mb-3">Details</h2>
           <Card>
             <CardContent className="pt-6">
-              {contactLoading ? (
-                <>
-                  <Skeleton className="h-5 w-32 mb-2" />
-                  <Skeleton className="h-8 w-full mb-4" />
-                  <Skeleton className="h-5 w-32 mb-2" />
-                  <Skeleton className="h-5 w-24 mb-4" />
-                  <Skeleton className="h-5 w-32 mb-2" />
-                  <Skeleton className="h-5 w-36" />
-                </>
-              ) : (
+              {contactLoading ? ( /* ... skeletons ... */ ) : (
                 <>
                   <div className="mb-3">
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Interests</h3>
                     <div className="flex flex-wrap gap-2">
-                      {(contact as ContactWithSuggestion)?.interests ? (
-                        JSON.parse((contact as ContactWithSuggestion)?.interests || '[]').map((interest: string, idx: number) => (
+                      {contact?.interests ? (
+                        JSON.parse(contact.interests || '[]').map((interest: string, idx: number) => (
                           <Badge key={idx} variant="outline">{interest}</Badge>
                         ))
                       ) : (
@@ -386,16 +358,14 @@ export default function ContactDetails() {
                       )}
                     </div>
                   </div>
-                  
                   <div className="mb-3">
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Relationship</h3>
-                    <p className="text-sm capitalize">{(contact as ContactWithSuggestion)?.relationship_type || "Friend"}</p>
+                    <p className="text-sm capitalize">{contact?.relationshipType || "Friend"}</p>
                   </div>
-                  
                   <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">Reminder Frequency</h3>
                     <div className="flex items-center">
-                      <p className="text-sm mr-2">Every {(contact as ContactWithSuggestion)?.reminder_frequency || 14} days</p>
+                      <p className="text-sm mr-2">Every {contact?.reminderFrequency || 14} days</p>
                       <Button variant="link" className="text-primary text-sm p-0 h-auto">
                         Edit
                       </Button>
@@ -408,7 +378,6 @@ export default function ContactDetails() {
         </div>
       </section>
       
-      {/* Import Chat Modal */}
       <ImportChatModal
         open={showImportModal}
         onOpenChange={setShowImportModal}

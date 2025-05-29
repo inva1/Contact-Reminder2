@@ -22,6 +22,8 @@ interface ChatAnalysis {
   context_notes: string;
   conversation_themes: string[];
   message_preview: string;
+  source?: "openai" | "fallback"; // New field
+  error_message?: string; // New field
 }
 
 export async function analyzeChat(
@@ -30,12 +32,18 @@ export async function analyzeChat(
   relationshipType: string
 ): Promise<ChatAnalysis> {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      // Explicitly throw an error that the calling function can catch if key is missing
+      // Or handle fallback here directly. Current design is fallback.
+      console.warn("OpenAI API key is missing. Returning fallback analysis.");
+      throw new Error("OpenAI API key not configured."); // This will be caught by the catch block below
+    }
     const chatHistory = messages.map(m => 
       `[${new Date(m.timestamp).toLocaleString()}] ${m.sender}: ${m.content}`
     ).join('\n');
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // Using the latest OpenAI model
+      model: "gpt-4o", 
       messages: [
         {
           role: "system",
@@ -76,10 +84,11 @@ export async function analyzeChat(
       interaction_frequency: result.interaction_frequency || 'occasional',
       context_notes: result.context_notes || '',
       conversation_themes: result.conversation_themes || [],
-      message_preview: result.message_preview || ''
+      message_preview: result.message_preview || '',
+      source: "openai", // Mark source as openai for successful calls
     };
-  } catch (error) {
-    console.error("OpenAI API error:", error);
+  } catch (error: any) { // Catch any error
+    console.error("OpenAI API error in analyzeChat:", error.message);
     return {
       last_interaction_date: new Date().toISOString().split('T')[0],
       topics: [],
@@ -87,9 +96,11 @@ export async function analyzeChat(
       sentiment: 'neutral',
       relationship_strength: 5,
       interaction_frequency: 'occasional',
-      context_notes: '',
+      context_notes: 'Default analysis due to error.',
       conversation_themes: [],
-      message_preview: ''
+      message_preview: '',
+      source: "fallback", // New property
+      error_message: "OpenAI API interaction failed. Using fallback analysis." // New property
     };
   }
 }
@@ -99,6 +110,8 @@ interface SuggestionResponse {
   tone_analysis: string;
   context_relevance: string;
   alternative_options: string[];
+  source?: "openai" | "fallback"; // New field
+  error_message?: string; // New field
 }
 
 export async function generateSuggestion(
@@ -110,7 +123,10 @@ export async function generateSuggestion(
   occasionContext?: string
 ): Promise<SuggestionResponse> {
   try {
-    // Prepare context for better suggestion generation
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("OpenAI API key is missing. Returning fallback suggestion.");
+      throw new Error("OpenAI API key not configured."); // This will be caught by the catch block below
+    }
     const interestsText = interests.length > 0 
       ? `They are interested in: ${interests.join(', ')}.` 
       : '';
@@ -128,7 +144,7 @@ export async function generateSuggestion(
       : '';
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // Using the latest OpenAI model
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
@@ -168,15 +184,18 @@ Respond in JSON format with: message, tone_analysis, context_relevance, and alte
       message: result.message || `Hey ${contactName}, just wanted to check in and see how you're doing!`,
       tone_analysis: result.tone_analysis || 'Casual and friendly tone suitable for reconnecting.',
       context_relevance: result.context_relevance || 'General check-in message.',
-      alternative_options: result.alternative_options || [`Hi ${contactName}, hope you've been well!`]
+      alternative_options: result.alternative_options || [`Hi ${contactName}, hope you've been well!`],
+      source: "openai", // Mark source as openai
     };
-  } catch (error) {
-    console.error("OpenAI API error:", error);
+  } catch (error: any) { // Catch any error
+    console.error("OpenAI API error in generateSuggestion:", error.message);
     return {
       message: `Hey ${contactName}, just wanted to check in and see how you're doing!`,
       tone_analysis: 'Casual and friendly tone suitable for reconnecting.',
       context_relevance: 'General check-in message.',
-      alternative_options: [`Hi ${contactName}, hope you've been well!`]
+      alternative_options: [`Hi ${contactName}, hope you've been well!`],
+      source: "fallback", // New property
+      error_message: "OpenAI API interaction failed. Using fallback suggestion." // New property
     };
   }
 }
