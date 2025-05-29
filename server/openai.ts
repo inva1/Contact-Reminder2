@@ -1,12 +1,13 @@
 import { AzureOpenAI } from "openai";
 
-// Using OpenAI for chat analysis and suggestion generation
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+// Using Azure OpenAI for chat analysis and suggestion generation
+// The newest OpenAI model is "gpt-4o" which was released May 13, 2024. Do not change this unless explicitly requested by the user
 const openai = new AzureOpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
-  endpoint: process.env.AZURE_OPENAI_API_ENDPOINT,
-  deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME, // Default model for requests
-  apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+  baseURL: process.env.AZURE_OPENAI_API_ENDPOINT, // Updated to use baseURL like Snippet A
+  defaultQuery: { 'api-version': process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview' }, // Added defaultQuery like Snippet A
+  defaultHeaders: { 'api-key': process.env.AZURE_OPENAI_API_KEY }, // Added defaultHeaders like Snippet A
+  deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
 });
 
 interface Message {
@@ -25,20 +26,33 @@ interface ChatAnalysis {
   context_notes: string;
   conversation_themes: string[];
   message_preview: string;
+  source?: "azure" | "fallback";
+  error_message?: string;
 }
 
+// analyzeChat function remains unchanged as it is not directly related to the improvements in Snippet A
 export async function analyzeChat(
   messages: Message[],
   contactName: string,
   relationshipType: string
 ): Promise<ChatAnalysis> {
   try {
+    if (
+      !process.env.AZURE_OPENAI_API_KEY ||
+      !process.env.AZURE_OPENAI_API_ENDPOINT ||
+      !process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+      !process.env.AZURE_OPENAI_API_VERSION
+    ) {
+      console.warn("Azure OpenAI configuration is incomplete. Returning fallback analysis.");
+      throw new Error("Azure OpenAI configuration not complete (missing API key, endpoint, deployment name, or API version).");
+    }
+
     const chatHistory = messages.map(m => 
       `[${new Date(m.timestamp).toLocaleString()}] ${m.sender}: ${m.content}`
     ).join('\n');
 
     const response = await openai.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME, // Using the latest OpenAI model
+      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
       messages: [
         {
           role: "system",
@@ -79,10 +93,11 @@ export async function analyzeChat(
       interaction_frequency: result.interaction_frequency || 'occasional',
       context_notes: result.context_notes || '',
       conversation_themes: result.conversation_themes || [],
-      message_preview: result.message_preview || ''
+      message_preview: result.message_preview || '',
+      source: "azure",
     };
-  } catch (error) {
-    console.error("OpenAI API error:", error);
+  } catch (error: any) {
+    console.error("Azure OpenAI API error in analyzeChat:", error.message);
     return {
       last_interaction_date: new Date().toISOString().split('T')[0],
       topics: [],
@@ -90,9 +105,11 @@ export async function analyzeChat(
       sentiment: 'neutral',
       relationship_strength: 5,
       interaction_frequency: 'occasional',
-      context_notes: '',
+      context_notes: 'Default analysis due to error.',
       conversation_themes: [],
-      message_preview: ''
+      message_preview: '',
+      source: "fallback",
+      error_message: "Azure OpenAI API interaction failed. Using fallback analysis."
     };
   }
 }
@@ -102,6 +119,8 @@ interface SuggestionResponse {
   tone_analysis: string;
   context_relevance: string;
   alternative_options: string[];
+  source?: "azure" | "fallback";
+  error_message?: string;
 }
 
 export async function generateSuggestion(
@@ -113,7 +132,22 @@ export async function generateSuggestion(
   occasionContext?: string
 ): Promise<SuggestionResponse> {
   try {
-    // Prepare context for better suggestion generation
+    // Input validation (adopted from Snippet A)
+    if (!contactName || !relationshipType) {
+      throw new Error("Missing required fields: contactName or relationshipType");
+    }
+
+    // Check for required environment variables
+    if (
+      !process.env.AZURE_OPENAI_API_KEY ||
+      !process.env.AZURE_OPENAI_API_ENDPOINT ||
+      !process.env.AZURE_OPENAI_DEPLOYMENT_NAME ||
+      !process.env.AZURE_OPENAI_API_VERSION
+    ) {
+      console.warn("Azure OpenAI configuration is incomplete. Returning fallback suggestion.");
+      throw new Error("Azure OpenAI configuration not complete (missing API key, endpoint, deployment name, or API version).");
+    }
+
     const interestsText = interests.length > 0 
       ? `They are interested in: ${interests.join(', ')}.` 
       : '';
@@ -131,7 +165,7 @@ export async function generateSuggestion(
       : '';
 
     const response = await openai.chat.completions.create({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME, // Using the latest OpenAI model
+      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
       messages: [
         {
           role: "system",
@@ -168,18 +202,31 @@ Respond in JSON format with: message, tone_analysis, context_relevance, and alte
 
     const result = JSON.parse(response.choices[0].message.content || '{}');
     return {
-      message: result.message || `Hey ${contactName}, just wanted to check in and see how you're doing!`,
+      message: result.message || `Hi ${contactName}, been a while! How’s your ${relationshipType === 'friend' ? 'day' : 'family time'} going?`, // Updated fallback message like Snippet A
       tone_analysis: result.tone_analysis || 'Casual and friendly tone suitable for reconnecting.',
-      context_relevance: result.context_relevance || 'General check-in message.',
-      alternative_options: result.alternative_options || [`Hi ${contactName}, hope you've been well!`]
+      context_relevance: result.context_relevance || 'General check-in message tailored to relationship type.',
+      alternative_options: result.alternative_options || [
+        `Hey ${contactName}, thought of you! How’s everything going?`, // Updated to include multiple alternatives like Snippet A
+        `Hi ${contactName}, hope you’re doing well! What’s new with you?`
+      ],
+      source: "azure",
     };
-  } catch (error) {
-    console.error("OpenAI API error:", error);
+  } catch (error: any) {
+    console.error("Azure OpenAI API error in generateSuggestion:", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    }); // Enhanced error logging like Snippet A
     return {
-      message: `Hey ${contactName}, just wanted to check in and see how you're doing!`,
+      message: `Hi ${contactName}, been a while! How’s your ${relationshipType === 'friend' ? 'day' : 'family time'} going?`, // Updated fallback message
       tone_analysis: 'Casual and friendly tone suitable for reconnecting.',
-      context_relevance: 'General check-in message.',
-      alternative_options: [`Hi ${contactName}, hope you've been well!`]
+      context_relevance: 'General check-in message tailored to relationship type.',
+      alternative_options: [
+        `Hey ${contactName}, thought of you! How’s everything going?`,
+        `Hi ${contactName}, hope you’re doing well! What’s new with you?`
+      ], // Updated to include multiple alternatives
+      source: "fallback",
+      error_message: "Azure OpenAI API interaction failed. Using fallback suggestion."
     };
   }
 }
