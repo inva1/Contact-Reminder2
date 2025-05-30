@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import ChatExportGuidanceModal from '../../components/chat-export/guidance-modal';
+import ChatExportGuidanceModal from '@components/chat-export/guidance-modal';
 
 // Mocks will be added in the setupTests.ts file in a later step
 // jest.mock('@/hooks/use-chat-export', () => ({

@@ -24,6 +24,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "client", "src"),
       "@shared": path.resolve(__dirname, "shared"),
       "@assets": path.resolve(__dirname, "attached_assets"),
+      "@components": path.resolve(__dirname, "client/src/components"),
     },
   },
   root: path.resolve(__dirname, "client"),
@@ -43,6 +44,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['**/*.test.ts', '**/*.spec.ts', '**/*.test.tsx', '**/*.spec.tsx'],
-    setupFiles: ['./client/src/setupTests.ts'],
+    setupFiles: ['./src/setupTests.ts'],
   },
 });
