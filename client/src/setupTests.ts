@@ -1,21 +1,24 @@
 import '@testing-library/jest-dom';
 
-jest.mock('@/hooks/use-chat-export', () => ({
-  useLogChatExportPrompt: jest.fn(() => ({
-    mutateAsync: jest.fn().mockResolvedValue(undefined), // Ensure mutateAsync is a mock function
+vi.mock('@/hooks/use-chat-export', () => ({
+  useLogChatExportPrompt: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined), // Ensure mutateAsync is a mock function
   })),
-  useSnoozeChatExportPrompt: jest.fn(() => ({
-    mutateAsync: jest.fn().mockResolvedValue(undefined), // Ensure mutateAsync is a mock function
+  useSnoozeChatExportPrompt: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue(undefined), // Ensure mutateAsync is a mock function
   })),
 }));
 
-jest.mock('wouter', () => ({
-  ...jest.requireActual('wouter'), // Import and spread actual module
-  useLocation: jest.fn(() => ['/current-path', jest.fn()]), // Mock useLocation
-}));
+vi.mock('wouter', async () => {
+  const actual = await vi.importActual('wouter');
+  return {
+    ...actual, // Import and spread actual module
+    useLocation: vi.fn(() => ['/current-path', vi.fn()]), // Mock useLocation
+  };
+});
 
-jest.mock('@/hooks/use-toast', () => ({
-  useToast: jest.fn(() => ({
-    toast: jest.fn(),
+vi.mock('@/hooks/use-toast', () => ({
+  useToast: vi.fn(() => ({
+    toast: vi.fn(),
   })),
 }));
