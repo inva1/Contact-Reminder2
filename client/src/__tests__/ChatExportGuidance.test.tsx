@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ChatExportGuidanceModal from '@components/chat-export/guidance-modal';
 
@@ -49,7 +49,18 @@ describe('ChatExportGuidanceModal', () => {
         contacts={mockContacts}
       />
     );
-    await user.click(screen.getByText(/Show Export Guide/i));
+
+    // Find the specific contact card for John Doe
+    const johnDoeTextElement = screen.getByText('John Doe');
+    const johnDoeCard = johnDoeTextElement.closest('div.flex.items-center.justify-between.p-4.border.rounded-lg');
+    
+    if (!johnDoeCard) {
+      throw new Error("Could not find John Doe's card container. The DOM structure might have changed.");
+    }
+
+    // Click the "Show Export Guide" button within John Doe's card
+    await user.click(within(johnDoeCard).getByText(/Show Export Guide/i));
+    
     expect(screen.getByText(/Follow these steps to export your WhatsApp chat history/i)).toBeInTheDocument();
   });
 });
