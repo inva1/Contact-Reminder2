@@ -2,8 +2,12 @@ import { AzureOpenAI } from "openai";
 
 // Using Azure OpenAI for chat analysis and suggestion generation
 // The newest OpenAI model is "gpt-4o" which was released May 13, 2024. Do not change this unless explicitly requested by the user
+// The `apiVersion` is required by the openai library when using Azure.
+// It defaults to '2025-01-01-preview' if the AZURE_OPENAI_API_VERSION environment variable is not set.
+// Ensure AZURE_OPENAI_API_VERSION is set in your environment for production.
 const openai = new AzureOpenAI({
   apiKey: process.env.AZURE_OPENAI_API_KEY,
+  apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview', // Add this line
   baseURL: process.env.AZURE_OPENAI_API_ENDPOINT, // Updated to use baseURL like Snippet A
   defaultQuery: { 'api-version': process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview' }, // Added defaultQuery like Snippet A
   defaultHeaders: { 'api-key': process.env.AZURE_OPENAI_API_KEY }, // Added defaultHeaders like Snippet A
