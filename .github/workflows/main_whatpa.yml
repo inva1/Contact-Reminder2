@@ -24,7 +24,6 @@ jobs:
           node-version: '22.x'
 
       - name: npm install, build, and test
-          working-directory: client
         run: |
           npm install
           npm run build --if-present
@@ -46,7 +45,6 @@ jobs:
       name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
     permissions:
-      id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
 
     steps:
@@ -57,18 +55,12 @@ jobs:
 
       - name: Unzip artifact for deployment
         run: unzip release.zip
-      
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_43E4DF7218A0418693F9E0DC9F6CA01F }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E5EB00544EDD4A3583C900051298176E }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_913E1D18340D47D7B6E006F86886D537 }}
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'WhatPA'
+          app-name: 'WhatPA' # This name was confirmed by the user
           slot-name: 'Production'
-          package:.
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .
